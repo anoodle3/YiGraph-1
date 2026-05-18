@@ -1,0 +1,154 @@
+"use client"
+
+import * as React from "react"
+import {
+  FileText,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  CheckCircle2,
+  Sparkles,
+  ArrowRight,
+  Download,
+} from "lucide-react"
+import { marked } from "marked"
+import { useI18n } from "@/core/i18n/i18n-provider"
+import type { AnalysisReport as Report } from "@/core/types"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/core/utils"
+
+export function AnalysisReport({
+  report,
+  markdown,
+}: {
+  report?: Report | null
+  markdown?: string | null
+}) {
+  const { t } = useI18n()
+
+  const html = React.useMemo(() => {
+    if (!markdown) return ""
+    return marked.parse(markdown) as string
+  }, [markdown])
+
+  return (
+    <Card className="overflow-hidden border-primary/30 p-0">
+      <div className="flex items-center justify-between border-b border-border bg-primary/5 px-5 py-3">
+        <div className="flex items-center gap-2">
+          <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <FileText className="size-3.5" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold">
+              {report?.title ?? t("dag.reportTitle", "分析报告")}
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              {t("dag.executedDesc", "工作流执行完成 · 自动生成")}
+            </div>
+          </div>
+        </div>
+        <Button variant="outline" size="sm" className="gap-1.5">
+          <Download className="size-3.5" />
+          {t("dag.exportReport", "导出报告")}
+        </Button>
+      </div>
+
+      {markdown ? (
+        <div className="px-5 py-5">
+          <div
+            className="prose prose-sm max-w-none dark:prose-invert text-sm leading-relaxed text-foreground/90"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        </div>
+      ) : report ? (
+        <div className="flex flex-col gap-6 px-5 py-5">
+          {/* Executive summary */}
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {t("dag.summary", "结论概要")}
+            </h3>
+            <p className="text-pretty text-[15px] leading-relaxed text-foreground/90">
+              {report.executiveSummary}
+            </p>
+          </section>
+
+          {/* Metrics */}
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {t("dag.metrics", "关键指标")}
+            </h3>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              {report.metrics.map((m) => (
+                <div
+                  key={m.label}
+                  className="rounded-lg border border-border bg-muted/30 p-4"
+                >
+                  <div className="text-xs text-muted-foreground">{m.label}</div>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-2xl font-semibold tabular-nums text-foreground">
+                      {m.value}
+                    </span>
+                    <TrendIcon trend={m.trend} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Findings */}
+          <section>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Sparkles className="size-3.5 text-primary" />
+              {t("dag.findings", "主要发现")}
+            </h3>
+            <ul className="flex flex-col gap-2">
+              {report.keyFindings.map((f, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-3 rounded-md border border-border bg-card p-3 text-sm leading-relaxed"
+                >
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-accent" />
+                  <span className="text-foreground/90">{f}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {/* Recommendations */}
+          <section>
+            <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <ArrowRight className="size-3.5 text-primary" />
+              {t("dag.recommendations", "后续建议")}
+            </h3>
+            <ol className="flex flex-col gap-2">
+              {report.recommendations.map((r, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-3 rounded-md bg-muted/30 p-3 text-sm leading-relaxed"
+                >
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                    {i + 1}
+                  </span>
+                  <span className="text-foreground/90">{r}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
+      ) : null}
+    </Card>
+  )
+}
+
+function TrendIcon({ trend }: { trend?: "up" | "down" | "flat" }) {
+  if (!trend) return null
+  const Icon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus
+  const color =
+    trend === "up"
+      ? "text-accent"
+      : trend === "down"
+        ? "text-destructive"
+        : "text-muted-foreground"
+  return <Icon className={cn("size-4", color)} />
+}

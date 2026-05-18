@@ -1,10 +1,3 @@
-# v0 sandbox internal files
-
-.snowflake/
-.v0-trash/
-.vercel/
-next.user-config.*
-
 # Environment variables
 .env*.local
 

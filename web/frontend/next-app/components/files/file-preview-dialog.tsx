@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { FileText, Table } from "lucide-react"
+import { marked } from "marked"
 import { useI18n } from "@/core/i18n/i18n-provider"
 import type { PreviewData } from "@/core/types"
 import {
@@ -86,6 +87,15 @@ export function FilePreviewDialog({
               <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">
                 {preview.content}
               </pre>
+            </div>
+          ) : preview.type === "md" ? (
+            <div className="max-h-[60vh] overflow-auto rounded-md border bg-background p-6">
+              <div
+                className="prose prose-sm max-w-none dark:prose-invert text-sm leading-relaxed text-foreground/90"
+                dangerouslySetInnerHTML={{
+                  __html: marked.parse(preview.content) as string,
+                }}
+              />
             </div>
           ) : (
             <div className="flex h-80 flex-col items-center justify-center gap-3 text-center">

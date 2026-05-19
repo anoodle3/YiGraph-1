@@ -172,17 +172,26 @@ export async function previewFile(datasetId: string, fileName: string): Promise<
     }
   }
 
-  const content = json.content
-  const headers: string[] = content.headers ?? []
-  const rows: string[][] = (content.rows as Record<string, string>[] | undefined)?.map((row) =>
-    headers.map((h) => row[h] ?? "")
-  ) ?? []
+  const contentType: PreviewData["type"] = json.content_type ?? "csv"
+
+  if (contentType === "csv") {
+    const content = json.content
+    const headers: string[] = content.headers ?? []
+    const rows: string[][] = (content.rows as Record<string, string>[] | undefined)?.map((row) =>
+      headers.map((h) => row[h] ?? "")
+    ) ?? []
+
+    return {
+      type: contentType,
+      content: `共 ${content.total_rows} 行，显示前 ${content.displayed_rows} 行`,
+      headers,
+      rows,
+      totalPages: Math.ceil((content.total_rows ?? 0) / (content.displayed_rows ?? 100)),
+    }
+  }
 
   return {
-    type: (json.content_type as PreviewData["type"]) ?? "csv",
-    content: `共 ${content.total_rows} 行，显示前 ${content.displayed_rows} 行`,
-    headers,
-    rows,
-    totalPages: Math.ceil((content.total_rows ?? 0) / (content.displayed_rows ?? 100)),
+    type: contentType,
+    content: json.content,
   }
 }

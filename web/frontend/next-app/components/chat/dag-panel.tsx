@@ -27,7 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
+
 
 export function DagPanel({
   plan,
@@ -120,9 +120,6 @@ export function DagPanel({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="dag-modify-text">
-              {t("dag.modifyDesc", "修改建议")}
-            </Label>
             <Textarea
               id="dag-modify-text"
               placeholder={t("dag.modifyPlaceholder", "描述您想要如何调整这个工作流…")}

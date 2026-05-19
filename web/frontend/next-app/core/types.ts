@@ -184,7 +184,7 @@ export interface UploadConfig {
   graphName?: string
 }
 
-export type FileType2 = "csv" | "txt" | "pdf" | "docx"
+export type FileType2 = "csv" | "txt" | "pdf" | "docx" | "md"
 
 export interface PreviewData {
   type: FileType2

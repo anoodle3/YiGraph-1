@@ -46,6 +46,7 @@ export interface ChatRequest {
   is_dag_modification?: boolean
   dag_id?: string
   modifications?: string
+  request_id?: string
 }
 
 // --- 回调 ---
@@ -55,7 +56,7 @@ export type ChatStreamCallback = (event: ChatResponse) => void
 // --- 连接管理 ---
 
 let socket: Socket | null = null
-let currentCallback: ChatStreamCallback | null = null
+const pendingCallbacks = new Map<string, ChatStreamCallback>()
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let serverUrl = ""
 
@@ -87,8 +88,14 @@ export function connectChatSocket(url: string): void {
     console.log("[chat] SocketIO connected:", socket?.id)
   })
 
-  socket.on("chat_response", (data: ChatResponse) => {
-    currentCallback?.(data)
+  socket.on("chat_response", (data: ChatResponse & { request_id?: string }) => {
+    const rid = data.request_id
+    if (rid && pendingCallbacks.has(rid)) {
+      pendingCallbacks.get(rid)!(data)
+    } else if (!rid) {
+      // 兼容旧后端（未返回 request_id）：广播给所有等待中的回调
+      pendingCallbacks.forEach((cb) => cb(data))
+    }
   })
 
   socket.on("disconnect", (reason) => {
@@ -104,20 +111,26 @@ export function sendChatRequest(
   params: ChatRequest,
   callback: ChatStreamCallback,
 ): void {
-  currentCallback = callback
-  if (socket?.connected) {
-    // 将 boolean 转为后端期望的格式
-    const payload: Record<string, unknown> = { ...params }
-    if (typeof payload.expert_mode === "boolean") {
-      // 旧版后端直接读 expert_mode bool
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+  // 包装回调：stream_end / error 时自动清理
+  const wrapped: ChatStreamCallback = (event) => {
+    if (event.type === "stream_end" || event.error) {
+      pendingCallbacks.delete(requestId)
     }
+    callback(event)
+  }
+
+  pendingCallbacks.set(requestId, wrapped)
+
+  if (socket?.connected) {
+    const payload: Record<string, unknown> = { ...params, request_id: requestId }
     if (typeof payload.is_dag_modification === "boolean") {
       payload.is_dag_modification = payload.is_dag_modification ? "true" : "false"
     }
     socket.emit("chat_request", payload)
   } else {
-    // 未连接时立即返回错误，让上层回退到 mock
-    callback({
+    wrapped({
       type: "stream_end",
       error: "WebSocket not connected",
     })
@@ -137,7 +150,7 @@ export function disconnectChatSocket(): void {
     socket.disconnect()
     socket = null
   }
-  currentCallback = null
+  pendingCallbacks.clear()
   serverUrl = ""
 }
 

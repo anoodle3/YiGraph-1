@@ -78,19 +78,21 @@ export function ChatWorkspace() {
     if (!activeId && sessions[0]) selectSession(sessions[0].id)
   }, [activeId, sessions, selectSession])
 
-  // 理解阶段进度条缓慢前进的定时器
-  const progressTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
+  // 理解阶段进度条缓慢前进的定时器（每个消息独立）
+  const progressTimersRef = React.useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
 
   function startUnderstandingProgress(sessionId: string, msgId: string) {
-    if (progressTimerRef.current) return
+    const key = `${sessionId}-${msgId}`
+    if (progressTimersRef.current.has(key)) return
     let p = 0
-    progressTimerRef.current = setInterval(() => {
+    const timer = setInterval(() => {
       p += 0.035
       if (p >= 0.9) {
         p = 0.9
-        if (progressTimerRef.current) {
-          clearInterval(progressTimerRef.current)
-          progressTimerRef.current = null
+        const t = progressTimersRef.current.get(key)
+        if (t) {
+          clearInterval(t)
+          progressTimersRef.current.delete(key)
         }
       }
       updatePlan(sessionId, msgId, (plan) => ({
@@ -98,12 +100,15 @@ export function ChatWorkspace() {
         progress: { ...plan.progress, understanding: p },
       }))
     }, 350)
+    progressTimersRef.current.set(key, timer)
   }
 
   function finishUnderstandingProgress(sessionId: string, msgId: string) {
-    if (progressTimerRef.current) {
-      clearInterval(progressTimerRef.current)
-      progressTimerRef.current = null
+    const key = `${sessionId}-${msgId}`
+    const t = progressTimersRef.current.get(key)
+    if (t) {
+      clearInterval(t)
+      progressTimersRef.current.delete(key)
     }
     updatePlan(sessionId, msgId, (plan) => ({
       ...plan,

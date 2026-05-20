@@ -4,10 +4,12 @@ import re
 import logging
 import asyncio
 from flask_socketio import emit
+from flask import request
 from . import socketio
 # Add project path to import AAG services
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 from aag.api.async_runtime import get_background_loop, get_chat_service
+from aag.api.services.chat_service import CHAT_FRIENDLY_ERROR_MSG
 
 
 logger = logging.getLogger(__name__)
@@ -165,6 +167,7 @@ def smart_split_markdown(text: str, max_len: int = 80):
 @socketio.on('chat_request')
 def handle_chat_request(data):
     """WebSocket chat handler: receive user message, push streaming results."""
+    sid = request.sid
     # 1. Parse parameters
     try:
         user_message = str(data.get("message") or "").strip()
@@ -178,18 +181,19 @@ def handle_chat_request(data):
         _dtype = data.get("dataset_type") or data.get("file_type")
         dataset_type = str(_dtype).strip() if _dtype else None  # "text" | "graph" | None
         custom_mode = data.get("mode")
+        request_id = str(data.get("request_id") or "")
     except Exception as e:
         logger.error(f"Failed to parse parameters: {e}")
-        emit('chat_response', {"error": "Invalid request format. Please check parameters."})
+        emit('chat_response', {"error": "Invalid request format. Please check parameters.", "request_id": data.get("request_id", "")})
         return
 
     # 2. Validation
     if not user_message and not dag_confirm and not is_dag_modification:
-        emit('chat_response', {"error": "Message content cannot be empty."})
+        emit('chat_response', {"error": "Message content cannot be empty.", "request_id": request_id})
         return
 
     if not dataset:
-        emit('chat_response', {"error": "Dataset is empty. Please specify a dataset first."})
+        emit('chat_response', {"error": "Dataset is empty. Please specify a dataset first.", "request_id": request_id})
         return
 
     try:
@@ -198,8 +202,9 @@ def handle_chat_request(data):
 
         # Callback to send streaming data (called from background event loop thread)
         def send_response(data_chunk):
-            """Send response data to frontend."""
-            socketio.emit('chat_response', data_chunk)
+            """Send response data to frontend, targeted to the requesting client only."""
+            data_chunk["request_id"] = request_id
+            socketio.emit('chat_response', data_chunk, room=sid)
 
         # Determine mode
         if custom_mode == "interact":
@@ -280,5 +285,5 @@ def handle_chat_request(data):
     except Exception as e:
         error_msg = f"Processing failed: {str(e)}"
         logger.error(error_msg, exc_info=True)
-        emit('chat_response', {'type': 'result', 'contentType': 'text', 'content': CHAT_FRIENDLY_ERROR_MSG})
-        emit('chat_response', {'type': 'stream_end'})
+        emit('chat_response', {'type': 'result', 'contentType': 'text', 'content': CHAT_FRIENDLY_ERROR_MSG, 'request_id': request_id})
+        emit('chat_response', {'type': 'stream_end', 'request_id': request_id})

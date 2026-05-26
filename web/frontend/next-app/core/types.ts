@@ -1,26 +1,6 @@
 export type Lang = "zh-CN" | "en-US"
 
-export type AlgorithmCategory =
-  | "centrality"
-  | "community"
-  | "shortest-path"
-  | "components"
-  | "flow"
-  | "clustering"
-  | "similarity"
-  | "bipartite"
-  | "traversal"
-  | "tree"
-  | "dag"
-  | "coloring"
-  | "isomorphism"
-  | "link-analysis"
-  | "cycles"
-  | "matching"
-  | "assortativity"
-  | "distance"
-  | "efficiency"
-  | "operators"
+export type AlgorithmCategory = string
 
 export interface Algorithm {
   id: string

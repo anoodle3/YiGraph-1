@@ -44,16 +44,23 @@ def create_app():
     from .routes_documents import bp as documents_bp
     from .routes_manage_dataset import bp as manage_bp
     from .routes_models import bp as models_bp
+    from .routes_knowledge_base import bp as knowledge_base_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(documents_bp)
     app.register_blueprint(manage_bp)
     app.register_blueprint(models_bp)
+    app.register_blueprint(knowledge_base_bp)
 
     # ====== Initialize SocketIO and async runtime ======
     socketio.init_app(app)
     start_async_runtime()
     atexit.register(stop_async_runtime)
+
+    # Warm up algorithm caches on startup so the first request is fast
+    # from aag.knowledge_base.knowledge_base_management.basic import _get_formatted_algorithms, DEFAULT_LANG
+    # _get_formatted_algorithms(DEFAULT_LANG)
+    # logger.info("Algorithm cache warmed up")
  
     # ====== Register WebSocket event handlers ======
     try:

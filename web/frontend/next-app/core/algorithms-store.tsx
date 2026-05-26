@@ -4,11 +4,7 @@ import * as React from "react"
 import type { Algorithm } from "./types"
 import type { CategoryInfo } from "./api/algorithms"
 import { useI18n } from "@/core/i18n/i18n-provider"
-import {
-  fetchAlgorithms,
-  fetchCategories,
-  createAlgorithm as apiCreateAlgorithm,
-} from "./api/algorithms"
+import { fetchAlgorithms, fetchCategories } from "./api/algorithms"
 
 interface AlgorithmsContextValue {
   algorithms: Algorithm[]
@@ -54,8 +50,8 @@ export function AlgorithmsProvider({ children }: { children: React.ReactNode }) 
     refresh()
   }, [refresh, tick])
 
-  const addAlgorithm = React.useCallback(async (a: Algorithm) => {
-    await apiCreateAlgorithm(a)
+  const addAlgorithm = React.useCallback(async (_a: Algorithm) => {
+    // Algorithm is already created on the server by AddAlgorithmDialog
     setTick((n) => n + 1)
   }, [])
 

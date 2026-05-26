@@ -1,37 +1,54 @@
 const START_PORT = 5089
-const MAX_TRIES = 50
-const PROBE_PATH = "/api/models"
+const PROBE_PATH = "/api/health"
+const STORAGE_KEY = "yigraph_base_url"
 
 let cachedBaseUrl: string | null = null
 
-async function probePort(port: number): Promise<boolean> {
+async function probePort(port: number, timeoutMs = 500): Promise<boolean> {
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 800)
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     const res = await fetch(`http://localhost:${port}${PROBE_PATH}`, {
       signal: controller.signal,
     })
     clearTimeout(timeout)
-    return res.ok || res.status < 500
+    return true
   } catch {
     return false
   }
 }
 
-export async function getBaseUrl(): Promise<string> {
-  if (cachedBaseUrl) return cachedBaseUrl
+async function findBaseUrl(): Promise<string> {
+  // Check sessionStorage first (survives page refreshes)
+  try {
+    const stored = sessionStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      const port = parseInt(stored, 10)
+      if (!isNaN(port) && (await probePort(port, 300))) {
+        return `http://localhost:${port}`
+      }
+    }
+  } catch {
+    // sessionStorage might be unavailable
+  }
 
-  for (let i = 0; i < MAX_TRIES; i++) {
+  // Fall back to sequential probing
+  for (let i = 0; i < 50; i++) {
     const port = START_PORT + i
-    const ok = await probePort(port)
-    if (ok) {
-      cachedBaseUrl = `http://localhost:${port}`
-      return cachedBaseUrl
+    if (await probePort(port)) {
+      try {
+        sessionStorage.setItem(STORAGE_KEY, String(port))
+      } catch { /* ignore */ }
+      return `http://localhost:${port}`
     }
   }
 
-  // 全部未命中，回退默认端口，让后续 fetch 自然报错
-  cachedBaseUrl = `http://localhost:${START_PORT}`
+  return `http://localhost:${START_PORT}`
+}
+
+export async function getBaseUrl(): Promise<string> {
+  if (cachedBaseUrl) return cachedBaseUrl
+  cachedBaseUrl = await findBaseUrl()
   return cachedBaseUrl
 }
 

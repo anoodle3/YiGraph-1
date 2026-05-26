@@ -10,7 +10,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useI18n } from "@/core/i18n/i18n-provider"
 import { useAlgorithms } from "@/core/algorithms-store"
-import { CATEGORY_META, getCategoryLabel } from "@/core/algorithms-data"
+import { getCategoryLabel } from "@/core/algorithms-data"
 import { Clock, Tag, ArrowDown, ArrowUp, Lightbulb } from "lucide-react"
 
 export function AlgorithmInfoModal({
@@ -21,7 +21,7 @@ export function AlgorithmInfoModal({
   onClose: () => void
 }) {
   const { t, lang } = useI18n()
-  const { getById } = useAlgorithms()
+  const { getById, categories } = useAlgorithms()
   const algo = algorithmId ? getById(algorithmId) : null
 
   return (
@@ -41,7 +41,7 @@ export function AlgorithmInfoModal({
                       {algo.name}
                     </span>
                     <span>·</span>
-                    <span>{getCategoryLabel(algo.category, lang)}</span>
+                    <span>{getCategoryLabel(categories, algo.category)}</span>
                     <span>·</span>
                     <span className="flex items-center gap-1">
                       <Clock className="size-3" />

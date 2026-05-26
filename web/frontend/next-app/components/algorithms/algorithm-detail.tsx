@@ -4,7 +4,8 @@
 import { Clock, ArrowDown, ArrowUp, Tag, Lightbulb, LineChart, CheckCircle2 } from "lucide-react"
 import type { Algorithm } from "@/core/types"
 import { useI18n } from "@/core/i18n/i18n-provider"
-import { CATEGORY_META, getCategoryLabel } from "@/core/algorithms-data"
+import { getCategoryLabel } from "@/core/algorithms-data"
+import { useAlgorithms } from "@/core/algorithms-store"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -12,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card"
 
 export function AlgorithmDetail({ algorithm }: { algorithm: Algorithm }) {
   const { t, lang } = useI18n()
+  const { categories } = useAlgorithms()
   return (
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-4xl px-8 py-10">
@@ -26,7 +28,7 @@ export function AlgorithmDetail({ algorithm }: { algorithm: Algorithm }) {
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <span className="font-mono text-foreground/80">{algorithm.name}</span>
               <span>·</span>
-              <span>{getCategoryLabel(algorithm.category, lang)}</span>
+              <span>{getCategoryLabel(categories, algorithm.category)}</span>
               <span>·</span>
               <span className="flex items-center gap-1"><Clock className="size-3.5" />{algorithm.complexity}</span>
             </div>
@@ -89,8 +91,8 @@ export function AlgorithmDetail({ algorithm }: { algorithm: Algorithm }) {
             {t("algorithms.useCases", "典型应用场景")}
           </h2>
           <ul className="mt-4 grid gap-3 md:grid-cols-2">
-            {algorithm.useCases.map((u) => (
-              <li key={u} className="flex items-start gap-3 rounded-md border border-border bg-card p-4 text-sm">
+            {algorithm.useCases.map((u, i) => (
+              <li key={i} className="flex items-start gap-3 rounded-md border border-border bg-card p-4 text-sm">
                 <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-accent" />
                 <span className="text-foreground/90">{u}</span>
               </li>

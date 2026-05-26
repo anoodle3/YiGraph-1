@@ -4,11 +4,9 @@ import * as React from "react"
 import {
   Sparkles,
   Search,
-  BookOpen,
-  ListTree,
-  CheckCircle2,
   Loader2,
   AlertCircle,
+  CheckCircle2,
 } from "lucide-react"
 import {
   Dialog,
@@ -21,18 +19,13 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { cn } from "@/core/utils"
 import { useI18n } from "@/core/i18n/i18n-provider"
 import { useAlgorithms } from "@/core/algorithms-store"
-import type { Algorithm, AlgorithmCategory, Lang } from "@/core/types"
+import type { Algorithm } from "@/core/types"
 import { useToast } from "@/hooks/use-toast"
+import { createAlgorithm } from "@/core/api/algorithms"
 
-type Stage = "idle" | "searching" | "parsing" | "drafting" | "done" | "error"
-
-interface DraftResult {
-  algorithm: Algorithm
-  sources: { title: string; url: string }[]
-}
+type Stage = "idle" | "loading" | "done" | "error"
 
 export function AddAlgorithmDialog({
   open,
@@ -46,7 +39,7 @@ export function AddAlgorithmDialog({
   const { toast } = useToast()
   const [name, setName] = React.useState("")
   const [stage, setStage] = React.useState<Stage>("idle")
-  const [draft, setDraft] = React.useState<DraftResult | null>(null)
+  const [draft, setDraft] = React.useState<Algorithm | null>(null)
   const [error, setError] = React.useState<string | null>(null)
 
   function reset() {
@@ -71,23 +64,29 @@ export function AddAlgorithmDialog({
       return
     }
     setError(null)
-    setStage("searching")
-    await sleep(900)
-    setStage("parsing")
-    await sleep(900)
-    setStage("drafting")
-    await sleep(900)
-    const result = fabricateAlgorithm(trimmed, lang)
-    setDraft(result)
-    setStage("done")
+    setStage("loading")
+
+    try {
+      const result = await createAlgorithm({ name: trimmed, lang })
+      setDraft(result)
+      setStage("done")
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : String(err),
+      )
+      setStage("error")
+    }
   }
 
   function handleConfirm() {
     if (!draft) return
-    addAlgorithm(draft.algorithm)
+    addAlgorithm(draft)
     toast({
       title: t("algorithms.addedTitle", "已添加到知识库"),
-      description: t("algorithms.addedDesc", "{name} 现在可用于工作流规划。").replace("{name}", `${draft.algorithm.displayName} (${draft.algorithm.name})`),
+      description: t("algorithms.addedDesc", "{name} 现在可用于工作流规划。").replace(
+        "{name}",
+        `${draft.displayName} (${draft.name})`,
+      ),
     })
     onOpenChange(false)
     setTimeout(reset, 200)
@@ -120,17 +119,40 @@ export function AddAlgorithmDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t("algorithms.namePlaceholder", "例如：Katz Centrality / HITS / GCN")}
-              disabled={stage !== "idle" && stage !== "error"}
+              disabled={stage === "loading"}
             />
           </div>
 
-          {/* Pipeline visualization */}
+          {/* Progress area */}
           <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <StageList stage={stage} />
+            {stage === "idle" && (
+              <p className="text-xs text-muted-foreground">
+                {t("algorithms.idleHint", "输入算法名称后点击「检索并生成」，系统将自动联网检索资料并调用 LLM 生成结构化条目。")}
+              </p>
+            )}
+            {stage === "loading" && (
+              <div className="flex items-center gap-3">
+                <Loader2 className="size-5 animate-spin text-primary" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {t("algorithms.generating", "正在检索资料并生成算法条目…")}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("algorithms.generatingHint", "此过程需要联网检索学术资料、解析文档并调用 LLM，可能需要 1-3 分钟。")}
+                  </p>
+                </div>
+              </div>
+            )}
             {stage === "error" && error && (
-              <div className="mt-3 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
-                <AlertCircle className="size-3.5" />
-                {error}
+              <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+                <AlertCircle className="size-3.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+            {stage === "done" && draft && (
+              <div className="flex items-center gap-2 text-sm text-accent">
+                <CheckCircle2 className="size-4 shrink-0" />
+                {t("algorithms.generationDone", "算法条目生成完成！请确认后加入知识库。")}
               </div>
             )}
           </div>
@@ -140,48 +162,45 @@ export function AddAlgorithmDialog({
             <div className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-start gap-3">
                 <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground font-mono text-xs font-semibold">
-                  {draft.algorithm.name.slice(0, 3).toUpperCase()}
+                  {draft.name.slice(0, 3).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold">
-                    {draft.algorithm.displayName}{" "}
+                    {draft.displayName}{" "}
                     <span className="font-mono text-xs text-muted-foreground">
-                      ({draft.algorithm.name})
+                      ({draft.name})
                     </span>
                   </div>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {draft.algorithm.summary}
+                    {draft.summary}
                   </p>
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    {draft.algorithm.tags.map((t) => (
+                    {draft.tags.map((tg) => (
                       <span
-                        key={t}
+                        key={tg}
                         className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
                       >
-                        {t}
+                        {tg}
                       </span>
                     ))}
                   </div>
                 </div>
               </div>
-              <div className="mt-4 border-t border-border pt-3">
-                <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  {t("algorithms.references", "参考来源")}
+              <div className="mt-3 border-t border-border pt-3">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    {t("algorithms.category", "分类")}: {draft.category}
+                  </span>
+                  <span>
+                    {t("algorithms.complexity", "复杂度")}: {draft.complexity}
+                  </span>
+                  <span>
+                    {t("algorithms.inputsCount", "输入参数")}: {draft.inputs.length}
+                  </span>
+                  <span>
+                    {t("algorithms.outputsCount", "输出参数")}: {draft.outputs.length}
+                  </span>
                 </div>
-                <ul className="flex flex-col gap-1.5">
-                  {draft.sources.map((s) => (
-                    <li
-                      key={s.url}
-                      className="flex items-center gap-2 text-xs text-foreground/80"
-                    >
-                      <BookOpen className="size-3 text-primary" />
-                      <span className="truncate">{s.title}</span>
-                      <span className="truncate font-mono text-muted-foreground">
-                        {s.url}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
               </div>
             </div>
           )}
@@ -191,7 +210,7 @@ export function AddAlgorithmDialog({
           {stage === "done" ? (
             <>
               <Button variant="outline" onClick={reset}>
-                {t("algorithms.research", "重新搜索")}
+                {t("algorithms.regenerate", "重新生成")}
               </Button>
               <Button onClick={handleConfirm} className="gap-2">
                 <CheckCircle2 className="size-4" />
@@ -205,17 +224,10 @@ export function AddAlgorithmDialog({
               </Button>
               <Button
                 onClick={handleSearch}
-                disabled={
-                  !name.trim() ||
-                  stage === "searching" ||
-                  stage === "parsing" ||
-                  stage === "drafting"
-                }
+                disabled={!name.trim() || stage === "loading"}
                 className="gap-2"
               >
-                {stage === "searching" ||
-                stage === "parsing" ||
-                stage === "drafting" ? (
+                {stage === "loading" ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Search className="size-4" />
@@ -228,114 +240,4 @@ export function AddAlgorithmDialog({
       </DialogContent>
     </Dialog>
   )
-}
-
-function StageList({ stage }: { stage: Stage }) {
-  const { t } = useI18n()
-  const steps: { key: Stage; label: string; icon: React.ElementType }[] = [
-    { key: "searching", label: t("algorithms.stepSearch", "检索相关学术资料与文档"), icon: Search },
-    { key: "parsing", label: t("algorithms.stepParse", "解析关键字段（定义、复杂度、输入输出）"), icon: BookOpen },
-    { key: "drafting", label: t("algorithms.stepDraft", "生成结构化算法条目"), icon: ListTree },
-  ]
-  const order: Stage[] = ["idle", "searching", "parsing", "drafting", "done"]
-  const idx = order.indexOf(stage)
-
-  return (
-    <ol className="flex flex-col gap-2">
-      {steps.map((s, i) => {
-        const stepIdx = order.indexOf(s.key)
-        const isActive = stage === s.key
-        const isDone = idx > stepIdx
-        const Icon = s.icon
-        return (
-          <li key={s.key} className="flex items-center gap-3 text-xs">
-            <div
-              className={cn(
-                "flex size-7 items-center justify-center rounded-md border",
-                isDone
-                  ? "border-accent/40 bg-accent/15 text-accent-foreground"
-                  : isActive
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border bg-muted text-muted-foreground",
-              )}
-            >
-              {isDone ? (
-                <CheckCircle2 className="size-3.5" />
-              ) : isActive ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Icon className="size-3.5" />
-              )}
-            </div>
-            <span
-              className={cn(
-                isActive
-                  ? "text-foreground"
-                  : isDone
-                    ? "text-foreground/80"
-                    : "text-muted-foreground",
-              )}
-            >
-              {s.label}
-            </span>
-            {isActive && i < steps.length && (
-              <span className="ml-auto text-[10px] text-primary">{t("algorithms.executing", "执行中…")}</span>
-            )}
-            {isDone && (
-              <span className="ml-auto text-[10px] text-accent-foreground">
-                {t("algorithms.completed", "已完成")}
-              </span>
-            )}
-          </li>
-        )
-      })}
-    </ol>
-  )
-}
-
-function fabricateAlgorithm(
-  name: string,
-  lang: Lang,
-): DraftResult {
-  const id = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "") || `custom-${Date.now()}`
-  const displayName = `${name} 算法`
-
-  const algorithm: Algorithm = {
-    id,
-    name,
-    displayName,
-    category: "centrality" as AlgorithmCategory,
-    summary: `${name} 是一种图分析算法。`,
-    description: `${name} 在图上执行特定计算，适用于多种分析场景。`,
-    useCases: ["图分析"],
-    chartPreference: "bar",
-    complexity: "O(V+E)",
-    inputs: ["图 G"],
-    outputs: ["计算结果"],
-    tags: ["AI 扩展", "图分析"],
-  }
-
-  const sources = [
-    {
-      title: `${name} — Wikipedia`,
-      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(name)}`,
-    },
-    {
-      title: `${name} 综述论文`,
-      url: `https://arxiv.org/search/?query=${encodeURIComponent(name)}`,
-    },
-    {
-      title: `${name} 工程实践`,
-      url: `https://neo4j.com/docs/graph-data-science/current/algorithms/`,
-    },
-  ]
-
-  return { algorithm, sources }
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms))
 }

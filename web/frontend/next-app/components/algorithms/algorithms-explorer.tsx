@@ -4,7 +4,7 @@ import * as React from "react"
 import { Plus, Search, Tag, Gauge, BookOpen, ListTree, ArrowRight } from "lucide-react"
 import { useI18n } from "@/core/i18n/i18n-provider"
 import { useAlgorithms } from "@/core/algorithms-store"
-import { CATEGORY_META, getCategoryLabel } from "@/core/algorithms-data"
+import { getCategoryLabel } from "@/core/algorithms-data"
 import type { Algorithm, AlgorithmCategory } from "@/core/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,10 +15,14 @@ import { AlgorithmDetail } from "./algorithm-detail"
 
 export function AlgorithmsExplorer() {
   const { t, lang } = useI18n()
-  const { algorithms } = useAlgorithms()
+  const { algorithms, categories, refresh } = useAlgorithms()
   const [query, setQuery] = React.useState("")
   const [activeId, setActiveId] = React.useState<string>(algorithms[0]?.id ?? "")
   const [addOpen, setAddOpen] = React.useState(false)
+
+  React.useEffect(() => {
+    refresh()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (!algorithms.find((a) => a.id === activeId) && algorithms[0]) {
@@ -75,14 +79,14 @@ export function AlgorithmsExplorer() {
                     <div className="flex items-center gap-2">
                       <span className="size-1.5 rounded-full bg-primary" />
                       <span className="text-xs font-medium text-foreground">
-                        {getCategoryLabel(cat, lang)}
+                        {getCategoryLabel(categories, cat)}
                       </span>
                     </div>
                     <span className="text-[11px] text-muted-foreground">{list.length}</span>
                   </div>
                   <ul className="flex flex-col gap-1">
                     {list.map((a) => (
-                      <li key={a.id}>
+                      <li key={a.id} style={{ contentVisibility: "auto", containIntrinsicSize: "auto 56px" }}>
                         <button
                           onClick={() => setActiveId(a.id)}
                           className={cn(
@@ -143,6 +147,7 @@ export function AlgorithmsExplorer() {
 
 function PageHeader({ onAdd, total }: { onAdd: () => void; total: number }) {
   const { t } = useI18n()
+  const { categories } = useAlgorithms()
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur">
       <div className="flex items-center gap-3">
@@ -157,7 +162,7 @@ function PageHeader({ onAdd, total }: { onAdd: () => void; total: number }) {
       <div className="flex items-center gap-3">
         <div className="hidden items-center gap-4 text-xs text-muted-foreground md:flex">
           <span className="flex items-center gap-1.5"><ListTree className="size-3.5" />{t("algorithms.algosCount", "{count} 个算法").replace("{count}", String(total))}</span>
-          <span className="flex items-center gap-1.5"><Tag className="size-3.5" />{t("algorithms.catsCount", "{count} 个分类").replace("{count}", String(Object.keys(CATEGORY_META).length))}</span>
+          <span className="flex items-center gap-1.5"><Tag className="size-3.5" />{t("algorithms.catsCount", "{count} 个分类").replace("{count}", String(categories.length))}</span>
           <span className="flex items-center gap-1.5"><Gauge className="size-3.5" />{t("algorithms.liveAvailable", "实时可用")}</span>
         </div>
         <Button onClick={onAdd} className="gap-2">

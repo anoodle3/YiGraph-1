@@ -43,8 +43,7 @@ if __name__ == "__main__":
     print(f"Frontend: http://localhost:3000")
     socketio.run(
         app,
-        debug=True,
+        debug=False,
         host="0.0.0.0",
         port=port,
-        allow_unsafe_werkzeug=True,
     )

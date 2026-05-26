@@ -26,7 +26,7 @@ export function AlgorithmInfoModal({
 
   return (
     <Dialog open={!!algo} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="!max-w-3xl max-h-[85vh] overflow-auto">
         {algo && (
           <>
             <DialogHeader>
@@ -37,7 +37,7 @@ export function AlgorithmInfoModal({
                 <div className="min-w-0">
                   <DialogTitle className="text-lg">{algo.displayName}</DialogTitle>
                   <DialogDescription className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="font-mono text-foreground/70">
+                    <span className="font-mono text-foreground/70 break-all">
                       {algo.name}
                     </span>
                     <span>·</span>
@@ -53,7 +53,7 @@ export function AlgorithmInfoModal({
             </DialogHeader>
 
             <div className="flex flex-col gap-4 text-sm">
-              <p className="leading-relaxed text-foreground/90">{algo.summary}</p>
+              <p className="leading-relaxed text-foreground/90 break-words">{algo.summary}</p>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-md border border-border bg-muted/30 p-3">
@@ -63,7 +63,7 @@ export function AlgorithmInfoModal({
                   </div>
                   <ul className="flex flex-col gap-1 text-xs text-foreground/80">
                     {algo.inputs.map((x) => (
-                      <li key={x}>• {x}</li>
+                      <li key={x} className="break-words">• {x}</li>
                     ))}
                   </ul>
                 </div>
@@ -74,7 +74,7 @@ export function AlgorithmInfoModal({
                   </div>
                   <ul className="flex flex-col gap-1 text-xs text-foreground/80">
                     {algo.outputs.map((x) => (
-                      <li key={x}>• {x}</li>
+                      <li key={x} className="break-words">• {x}</li>
                     ))}
                   </ul>
                 </div>

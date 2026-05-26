@@ -145,12 +145,12 @@ function FileMain() {
 
   const handleUpload = async (
     fileList: File[],
-    _config: Record<string, string | undefined>,
+    config: Record<string, string | undefined>,
   ) => {
     if (!activeDatasetId || !activeDataset) return
     const fileType = activeDataset.fileType === "graph-data" ? "graph" : "text"
     for (const f of fileList) {
-      await uploadFile(activeDatasetId, f, fileType)
+      await uploadFile(activeDatasetId, f, fileType, config)
     }
     refreshFiles()
   }

@@ -58,6 +58,7 @@ export async function getGraphData(
   if (!json.success || !json.triplets) return null
 
   const triplets = json.triplets as [string, string, string][]
+  const nodeTypes: Record<string, string> | undefined = json.node_types
   const nodeMap = new Map<string, string>()
   const nodes: GraphData["nodes"] = []
   const edges: GraphData["edges"] = []
@@ -67,11 +68,19 @@ export async function getGraphData(
   for (const t of triplets) {
     if (!nodeMap.has(t[0])) {
       nodeMap.set(t[0], `n${nodeIdx++}`)
-      nodes.push({ id: nodeMap.get(t[0])!, label: t[0] })
+      nodes.push({
+        id: nodeMap.get(t[0])!,
+        label: t[0],
+        group: nodeTypes?.[t[0]],
+      })
     }
     if (!nodeMap.has(t[2])) {
       nodeMap.set(t[2], `n${nodeIdx++}`)
-      nodes.push({ id: nodeMap.get(t[2])!, label: t[2] })
+      nodes.push({
+        id: nodeMap.get(t[2])!,
+        label: t[2],
+        group: nodeTypes?.[t[2]],
+      })
     }
     edges.push({
       id: `e${edgeIdx++}`,
@@ -87,12 +96,33 @@ export async function uploadFile(
   datasetId: string,
   file: File,
   fileType: string,
-  _config?: UploadConfig,
+  config?: UploadConfig,
 ): Promise<FileItem> {
   const formData = new FormData()
   formData.append("kb_id", datasetId)
   formData.append("file", file)
   formData.append("file_type", fileType)
+
+  if (fileType === "graph" && config) {
+    const graphInfo = {
+      graphName: config.graphName || "",
+      vertexSchema: {
+        fileName: "",
+        idField: config.vertexLabelField || "",
+        nameField: config.vertexLabelField || "",
+      },
+      edgeSchema: {
+        fileName: file.name,
+        sourceField: config.edgeSourceField || "",
+        targetField: config.edgeTargetField || "",
+        relationField: "",
+      },
+      graphProperties: {
+        isDirected: true,
+      },
+    }
+    formData.append("graph_info", JSON.stringify(graphInfo))
+  }
 
   const res = await fetch(`${await getBaseUrl()}/api/upload_file`, {
     method: "POST",

@@ -22,6 +22,24 @@ interface Props {
   onGenerate: () => void
 }
 
+const GROUP_PALETTE = [
+  "#6366f1", "#ef4444", "#f59e0b", "#10b981", "#06b6d4",
+  "#8b5cf6", "#ec4899", "#f97316", "#84cc16", "#14b8a6",
+  "#3b82f6", "#e11d48", "#a855f7", "#22c55e", "#64748b",
+]
+
+const groupColorCache = new Map<string, string>()
+let paletteIndex = 0
+
+function getGroupColor(group: string | undefined): string {
+  if (!group) return "#6366f1"
+  if (groupColorCache.has(group)) return groupColorCache.get(group)!
+  const color = GROUP_PALETTE[paletteIndex % GROUP_PALETTE.length]
+  paletteIndex++
+  groupColorCache.set(group, color)
+  return color
+}
+
 export function GraphCanvas({ graphData, triplets, graphLoading, onGenerate }: Props) {
   const { t } = useI18n()
   const containerRef = React.useRef<HTMLDivElement>(null)
@@ -39,7 +57,12 @@ export function GraphCanvas({ graphData, triplets, graphLoading, onGenerate }: P
       container: containerRef.current,
       elements: [
         ...graphData.nodes.map((n) => ({
-          data: { id: n.id, label: n.label, group: n.group },
+          data: {
+            id: n.id,
+            label: n.label,
+            group: n.group,
+            color: n.color ?? getGroupColor(n.group),
+          },
         })),
         ...graphData.edges.map((e) => ({
           data: {
@@ -54,7 +77,8 @@ export function GraphCanvas({ graphData, triplets, graphLoading, onGenerate }: P
         {
           selector: "node",
           style: {
-            "background-color": "#6366f1",
+            "background-color": (ele: cytoscape.NodeSingular) =>
+              ele.data("color") || "#6366f1",
             label: "data(label)",
             "text-valign": "center",
             "text-halign": "center",

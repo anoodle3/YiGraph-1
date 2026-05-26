@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation"
 import {
   MessageSquareText,
   Library,
-  Sparkles,
   Github,
   Sun,
   Moon,
@@ -61,13 +60,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       <header className="flex h-14 shrink-0 items-center gap-6 border-b border-border bg-card px-6">
         {/* Brand */}
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Sparkles className="size-4" />
-          </div>
+          <img src="/logo.png" alt="Logo" className="size-8 rounded-md" />
           <div className="leading-tight">
             <div className="text-sm font-semibold">{t("app.title", "易图")}</div>
             <div className="text-[11px] text-muted-foreground">
-              {t("app.subtitle", "图算法智能分析平台")}
+              {t("app.subtitle", "图数据智能分析平台")}
             </div>
           </div>
         </Link>

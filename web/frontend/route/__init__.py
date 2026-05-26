@@ -10,6 +10,12 @@ from flask_socketio import SocketIO
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+# Propagate to subprocesses (e.g. MCP servers launched via python -m)
+existing_pythonpath = os.environ.get('PYTHONPATH', '')
+if PROJECT_ROOT not in existing_pythonpath.split(os.pathsep):
+    os.environ['PYTHONPATH'] = os.pathsep.join(
+        [p for p in [PROJECT_ROOT, existing_pythonpath] if p]
+    )
 
 from aag.api.async_runtime import start_async_runtime, stop_async_runtime
 

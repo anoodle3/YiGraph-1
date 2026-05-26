@@ -1,3 +1,24 @@
+import os
+import sys
+
+# Ensure CWD is the project root so that subprocesses
+# (e.g. MCP servers launched via `python -m aag.xxx`)
+# can find the `aag` package through Python's implicit
+# CWD-on-sys.path behaviour.
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+# Fix argv paths to absolute before chdir, otherwise Flask's reloader
+# can't find this script on restart (Werkzeug reads sys.orig_argv[1]).
+if not os.path.isabs(sys.argv[0]):
+    sys.argv[0] = os.path.abspath(sys.argv[0])
+if hasattr(sys, 'orig_argv') and len(sys.orig_argv) > 1:
+    if not os.path.isabs(sys.orig_argv[1]):
+        sys.orig_argv[1] = os.path.abspath(sys.orig_argv[1])
+
+os.chdir(_PROJECT_ROOT)
+# The script's own directory is still on sys.path[0], so
+# `from route import ...` continues to work regardless of CWD.
+
 import socket
 from route import create_app, socketio
 
@@ -19,9 +40,11 @@ if __name__ == "__main__":
     port = find_free_port()
     print(f"Using available port: {port}")
 
+    print(f"Frontend: http://localhost:3000")
     socketio.run(
         app,
         debug=True,
         host="0.0.0.0",
-        port=port
+        port=port,
+        allow_unsafe_werkzeug=True,
     )

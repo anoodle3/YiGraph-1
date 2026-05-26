@@ -1,5 +1,5 @@
 {
-  "app": { "title": "易图", "subtitle": "图算法智能分析平台", "openSource": "开源 · 欢迎贡献" },
+  "app": { "title": "易图", "subtitle": "图数据智能分析平台", "openSource": "开源 · 欢迎贡献" },
   "nav": { "analysis": "智能分析", "algorithms": "算法库", "datasets": "数据集管理", "files": "文件管理" },
   "chat": {
     "heading": "新的分析会话", "subheading": "自然语言提问 · 自动规划 DAG · 生成可视化报告",

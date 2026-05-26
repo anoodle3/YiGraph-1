@@ -9,6 +9,7 @@ AAG API Services 提供了统一的服务层，封装了后端核心功能，供
 - **EngineService**: 引擎管理服务（单例模式）
 - **ChatService**: 聊天服务
 - **DatasetService**: 数据集管理服务
+- **KnowledgeBaseService**: 算法知识库服务
 - **ModelService**: 模型服务
 
 ## 使用示例
@@ -241,9 +242,40 @@ def api_delete_file():
         }), 500
 ```
 
+### 4. 使用 KnowledgeBaseService 管理算法知识库
+
+```python
+from aag.api.services.knowledge_base_service import KnowledgeBaseService
+
+knowledge_base_service = KnowledgeBaseService()
+
+# 1. 获取算法列表
+algorithm_list = knowledge_base_service.get_algorithms(
+    search="pagerank",
+    category=None,
+    lang="zh-CN",
+)
+
+# 2. 获取分类列表
+categories = knowledge_base_service.get_categories(lang="zh-CN")
+
+# 3. 获取算法详情，支持 run_pagerank 或 pagerank
+algorithm_detail = knowledge_base_service.get_algorithm(
+    algorithm_id="run_pagerank",
+    lang="zh-CN",
+)
+
+# 4. 新增算法。该方法会联网检索资料并调用 LLM，耗时较长。
+created_algorithm = knowledge_base_service.create_algorithm(
+    name="simrank",
+    lang="zh-CN",
+    overwrite=False,
+)
+```
+
 ## 注意事项
 
-1. **异步处理**: 所有服务方法都是异步的，需要使用 `asyncio.run()` 或在异步函数中调用
+1. **异步处理**: ChatService 和 DatasetService 中的异步方法需要使用 `asyncio.run()` 或在异步函数中调用
 2. **引擎初始化**: EngineService 使用单例模式，首次调用会自动初始化引擎
 3. **错误处理**: 所有服务方法都返回包含 `success` 字段的字典，需要检查该字段
 4. **流式响应**: ChatService 的 `process_streaming_chat` 方法需要提供回调函数来发送数据
@@ -271,10 +303,16 @@ def api_delete_file():
 - `get_triplets()`: 获取知识库的三元组
 - `create_kb_from_graph()`: 从图文件创建知识库
 
+### KnowledgeBaseService
+
+- `get_algorithms()`: 获取算法列表，支持搜索、分类过滤和语言参数
+- `get_categories()`: 获取算法分类列表
+- `get_algorithm()`: 获取算法详情，支持 `run_` 前缀 ID 或算法原始 ID
+- `create_algorithm()`: 自动检索资料并新增算法知识库条目
+
 ### ModelService
 
 - `get_models()`: 获取可用模型列表
 - `get_model_by_id()`: 根据ID获取模型信息
 - `get_model_by_name()`: 根据名称获取模型信息
 - `get_model_config()`: 获取模型配置
-

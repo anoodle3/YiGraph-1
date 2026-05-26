@@ -3,6 +3,7 @@ const PROBE_PATH = "/api/health"
 const STORAGE_KEY = "yigraph_base_url"
 
 let cachedBaseUrl: string | null = null
+let pendingPromise: Promise<string> | null = null
 
 async function probePort(port: number, timeoutMs = 500): Promise<boolean> {
   try {
@@ -19,7 +20,6 @@ async function probePort(port: number, timeoutMs = 500): Promise<boolean> {
 }
 
 async function findBaseUrl(): Promise<string> {
-  // Check sessionStorage first (survives page refreshes)
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY)
     if (stored) {
@@ -28,17 +28,12 @@ async function findBaseUrl(): Promise<string> {
         return `http://localhost:${port}`
       }
     }
-  } catch {
-    // sessionStorage might be unavailable
-  }
+  } catch { /* sessionStorage might be unavailable */ }
 
-  // Fall back to sequential probing
   for (let i = 0; i < 50; i++) {
     const port = START_PORT + i
     if (await probePort(port)) {
-      try {
-        sessionStorage.setItem(STORAGE_KEY, String(port))
-      } catch { /* ignore */ }
+      try { sessionStorage.setItem(STORAGE_KEY, String(port)) } catch { /* */ }
       return `http://localhost:${port}`
     }
   }
@@ -48,8 +43,13 @@ async function findBaseUrl(): Promise<string> {
 
 export async function getBaseUrl(): Promise<string> {
   if (cachedBaseUrl) return cachedBaseUrl
-  cachedBaseUrl = await findBaseUrl()
-  return cachedBaseUrl
+  if (!pendingPromise) {
+    pendingPromise = findBaseUrl().then((url) => {
+      cachedBaseUrl = url
+      return url
+    })
+  }
+  return pendingPromise
 }
 
 export function getBaseUrlSync(): string {

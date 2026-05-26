@@ -15,14 +15,10 @@ import { AlgorithmDetail } from "./algorithm-detail"
 
 export function AlgorithmsExplorer() {
   const { t, lang } = useI18n()
-  const { algorithms, categories, refresh } = useAlgorithms()
+  const { algorithms, categories } = useAlgorithms()
   const [query, setQuery] = React.useState("")
   const [activeId, setActiveId] = React.useState<string>(algorithms[0]?.id ?? "")
   const [addOpen, setAddOpen] = React.useState(false)
-
-  React.useEffect(() => {
-    refresh()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (!algorithms.find((a) => a.id === activeId) && algorithms[0]) {

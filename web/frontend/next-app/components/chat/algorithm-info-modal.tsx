@@ -62,8 +62,8 @@ export function AlgorithmInfoModal({
                     {t("algorithms.inputs", "输入")}
                   </div>
                   <ul className="flex flex-col gap-1 text-xs text-foreground/80">
-                    {algo.inputs.map((x) => (
-                      <li key={x} className="break-words">• {x}</li>
+                    {algo.inputs.map((x, i) => (
+                      <li key={`in-${i}-${x}`} className="break-words">• {x}</li>
                     ))}
                   </ul>
                 </div>
@@ -73,8 +73,8 @@ export function AlgorithmInfoModal({
                     {t("algorithms.outputs", "输出")}
                   </div>
                   <ul className="flex flex-col gap-1 text-xs text-foreground/80">
-                    {algo.outputs.map((x) => (
-                      <li key={x} className="break-words">• {x}</li>
+                    {algo.outputs.map((x, i) => (
+                      <li key={`out-${i}-${x}`} className="break-words">• {x}</li>
                     ))}
                   </ul>
                 </div>
@@ -86,8 +86,8 @@ export function AlgorithmInfoModal({
                   {t("algorithms.typicalScenarios", "典型场景")}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {algo.useCases.map((u) => (
-                    <Badge key={u} variant="secondary" className="font-normal">
+                  {algo.useCases.map((u, i) => (
+                    <Badge key={`${i}-${u}`} variant="secondary" className="font-normal">
                       {u}
                     </Badge>
                   ))}
@@ -100,9 +100,9 @@ export function AlgorithmInfoModal({
                   {t("algorithms.tags", "标签")}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {algo.tags.map((t) => (
+                  {algo.tags.map((t, i) => (
                     <span
-                      key={t}
+                      key={`tag-${i}-${t}`}
                       className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
                     >
                       {t}

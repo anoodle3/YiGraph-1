@@ -257,7 +257,8 @@ export function ChatWorkspace() {
               finishUnderstandingProgress(sessionId, assistantMsgId)
               updatePlan(sessionId, assistantMsgId, (p) => ({
                 ...p,
-                understanding: `错误：${result.message}`,
+                error: result.message,
+                understanding: p.understanding || `错误：${result.message}`,
               }))
               break
             }
@@ -361,6 +362,14 @@ export function ChatWorkspace() {
               updatePlan(activeId, messageId, (p) => ({
                 ...p,
                 phase: "executed" as const,
+              }))
+            }
+
+            if (result.kind === "error") {
+              updatePlan(activeId, messageId, (p) => ({
+                ...p,
+                phase: "executed" as const,
+                error: result.message,
               }))
             }
           },
@@ -523,7 +532,8 @@ export function ChatWorkspace() {
                 finishUnderstandingProgress(activeId, assistantMsgId)
                 updatePlan(activeId, assistantMsgId, (p) => ({
                   ...p,
-                  understanding: `错误：${result.message}`,
+                  error: result.message,
+                  understanding: p.understanding || `错误：${result.message}`,
                 }))
                 break
             }

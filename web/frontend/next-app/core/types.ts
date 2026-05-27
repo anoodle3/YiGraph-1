@@ -101,6 +101,8 @@ export interface WorkflowPlan {
   }
   /** Accumulated markdown from result (text) events */
   markdown?: string
+  /** Error message from backend, if any */
+  error?: string
   /** Final analysis report, available after execution */
   report?: AnalysisReport
 }

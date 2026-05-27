@@ -84,8 +84,8 @@ export function GraphCanvas({ graphData, triplets, graphLoading, onGenerate }: P
             "text-halign": "center",
             color: "#1e293b",
             "font-size": "11px",
-            width: 28,
-            height: 28,
+            width: 36,
+            height: 36,
           },
         },
         {
@@ -122,7 +122,15 @@ export function GraphCanvas({ graphData, triplets, graphLoading, onGenerate }: P
   const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() * 0.8)
   const handleFit = () => cyRef.current?.fit(undefined, 40)
   const handleFullscreen = () => {
-    if (containerRef.current) containerRef.current.requestFullscreen()
+    if (!containerRef.current) return
+    const onFullscreenChange = () => {
+      if (document.fullscreenElement) {
+        setTimeout(() => cyRef.current?.fit(undefined, 40), 100)
+      }
+      document.removeEventListener("fullscreenchange", onFullscreenChange)
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange)
+    containerRef.current.requestFullscreen()
   }
   const escapeCSV = (val: string) => {
     if (!val) return ""
@@ -221,7 +229,7 @@ export function GraphCanvas({ graphData, triplets, graphLoading, onGenerate }: P
             {t("files.generatingGraph", "正在生成知识图谱...")}
           </div>
         ) : graphData ? (
-          <div ref={containerRef} className="h-full w-full" />
+          <div ref={containerRef} className="h-full w-full bg-background" />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             {t("files.generateHint", "点击\"生成图谱\"按钮可视化知识图谱")}

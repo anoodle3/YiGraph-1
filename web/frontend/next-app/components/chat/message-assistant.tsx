@@ -39,6 +39,11 @@ export function MessageAssistant({
         </div>
 
         <div className="flex flex-col gap-4">
+          {plan.error && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {plan.error}
+            </div>
+          )}
           <ThinkingSteps plan={plan} />
 
           {(phase === "dag-ready" ||

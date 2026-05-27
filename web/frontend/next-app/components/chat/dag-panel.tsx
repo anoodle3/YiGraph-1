@@ -483,7 +483,7 @@ function DagNodeBox({
           className="mt-auto flex items-start gap-1 self-start rounded text-[11px] text-primary underline-offset-2 hover:underline text-left"
         >
           <span className="font-mono break-all leading-tight">{algoName}</span>
-          <span className="text-muted-foreground shrink-0 leading-tight">· {algoDisplayName}</span>
+          <span className="text-muted-foreground break-words leading-tight">· {algoDisplayName}</span>
         </button>
       )}
     </div>

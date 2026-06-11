@@ -9,10 +9,13 @@ import {
   CheckCircle2,
   Loader2,
   Circle,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react"
 import type { DagEdge, DagNode, WorkflowPlan } from "@/core/types"
 import { useI18n } from "@/core/i18n/i18n-provider"
 import { useAlgorithms } from "@/core/algorithms-store"
+import { submitFeedback } from "@/core/api/feedback"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -31,11 +34,13 @@ import { Textarea } from "@/components/ui/textarea"
 
 export function DagPanel({
   plan,
+  userQuestion,
   onExecute,
   onModify,
   interactive,
 }: {
   plan: WorkflowPlan
+  userQuestion: string
   onExecute: () => void
   onModify: (modificationText: string) => void
   interactive: boolean
@@ -44,8 +49,26 @@ export function DagPanel({
   const [infoId, setInfoId] = React.useState<string | null>(null)
   const [modifyOpen, setModifyOpen] = React.useState(false)
   const [modifyText, setModifyText] = React.useState("")
+  const [feedback, setFeedback] = React.useState<"like" | "dislike" | null>(null)
   const phase = plan.phase
   const readyToExecute = phase === "dag-ready" && interactive
+
+  const handleFeedback = (type: "like" | "dislike") => {
+    if (feedback) return
+    setFeedback(type)
+    const dagSummary = JSON.stringify({
+      nodes: plan.nodes.map((n) => ({ id: n.id, label: n.label, algorithmId: n.algorithmId })),
+      edges: plan.edges.map((e) => ({ source: e.source, target: e.target })),
+    })
+    submitFeedback({
+      userQuestion,
+      analysisOutput: dagSummary,
+      type: "dag",
+      feedback: type,
+    }).catch(() => {
+      setFeedback(null)
+    })
+  }
 
   return (
     <Card className="overflow-hidden p-0">
@@ -60,6 +83,33 @@ export function DagPanel({
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <Info className="size-3" />
           {t("dag.inspectHint", "点击算法节点查看详情")}
+          <span className="mx-1 text-border">|</span>
+          <button
+            onClick={() => handleFeedback("like")}
+            disabled={feedback !== null}
+            className={cn(
+              "rounded p-0.5 transition-colors",
+              feedback === "like"
+                ? "text-primary"
+                : "text-muted-foreground hover:text-primary",
+              feedback !== null && feedback !== "like" && "opacity-40",
+            )}
+          >
+            <ThumbsUp className={cn("size-3", feedback === "like" && "fill-primary")} />
+          </button>
+          <button
+            onClick={() => handleFeedback("dislike")}
+            disabled={feedback !== null}
+            className={cn(
+              "rounded p-0.5 transition-colors",
+              feedback === "dislike"
+                ? "text-destructive"
+                : "text-muted-foreground hover:text-destructive",
+              feedback !== null && feedback !== "dislike" && "opacity-40",
+            )}
+          >
+            <ThumbsDown className={cn("size-3", feedback === "dislike" && "fill-destructive")} />
+          </button>
         </div>
       </div>
 

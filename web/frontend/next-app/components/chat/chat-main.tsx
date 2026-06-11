@@ -67,13 +67,18 @@ export function ChatMain({
         <ScrollArea className="h-full">
           <div className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-8">
             {!hasMessages && <EmptyState onPick={onSubmit} />}
-            {session?.messages.map((m) =>
+            {session?.messages.map((m, i) =>
               m.role === "user" ? (
                 <MessageUser key={m.id} message={m} />
               ) : (
                 <MessageAssistant
                   key={m.id}
                   message={m}
+                  userQuestion={
+                    session.messages
+                      .slice(0, i)
+                      .findLast((p) => p.role === "user")?.content ?? ""
+                  }
                   onExecute={() => onExecute(m.id)}
                   onModify={(text) => onModify(m.id, text)}
                   interactive={interactive}

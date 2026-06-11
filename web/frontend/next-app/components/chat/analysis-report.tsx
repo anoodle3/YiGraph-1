@@ -10,6 +10,8 @@ import {
   Sparkles,
   ArrowRight,
   Download,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react"
 import { marked } from "marked"
 import { useI18n } from "@/core/i18n/i18n-provider"
@@ -17,20 +19,40 @@ import type { AnalysisReport as Report } from "@/core/types"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/core/utils"
+import { submitFeedback } from "@/core/api/feedback"
 
 export function AnalysisReport({
   report,
   markdown,
+  userQuestion,
 }: {
   report?: Report | null
   markdown?: string | null
+  userQuestion: string
 }) {
   const { t } = useI18n()
+  const [feedback, setFeedback] = React.useState<"like" | "dislike" | null>(null)
 
   const html = React.useMemo(() => {
     if (!markdown) return ""
     return marked.parse(markdown) as string
   }, [markdown])
+
+  const handleFeedback = (type: "like" | "dislike") => {
+    if (feedback) return
+    setFeedback(type)
+    const output = report
+      ? JSON.stringify(report)
+      : markdown ?? ""
+    submitFeedback({
+      userQuestion,
+      analysisOutput: output,
+      type: "report",
+      feedback: type,
+    }).catch(() => {
+      setFeedback(null)
+    })
+  }
 
   return (
     <Card className="overflow-hidden border-primary/30 p-0">
@@ -48,10 +70,38 @@ export function AnalysisReport({
             </div>
           </div>
         </div>
-        <Button variant="outline" size="sm" className="gap-1.5">
-          <Download className="size-3.5" />
-          {t("dag.exportReport", "导出报告")}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-1.5">
+            <Download className="size-3.5" />
+            {t("dag.exportReport", "导出报告")}
+          </Button>
+          <button
+            onClick={() => handleFeedback("like")}
+            disabled={feedback !== null}
+            className={cn(
+              "rounded p-1.5 transition-colors",
+              feedback === "like"
+                ? "text-primary"
+                : "text-muted-foreground hover:text-primary",
+              feedback !== null && feedback !== "like" && "opacity-40",
+            )}
+          >
+            <ThumbsUp className={cn("size-3.5", feedback === "like" && "fill-primary")} />
+          </button>
+          <button
+            onClick={() => handleFeedback("dislike")}
+            disabled={feedback !== null}
+            className={cn(
+              "rounded p-1.5 transition-colors",
+              feedback === "dislike"
+                ? "text-destructive"
+                : "text-muted-foreground hover:text-destructive",
+              feedback !== null && feedback !== "dislike" && "opacity-40",
+            )}
+          >
+            <ThumbsDown className={cn("size-3.5", feedback === "dislike" && "fill-destructive")} />
+          </button>
+        </div>
       </div>
 
       {markdown ? (

@@ -11,11 +11,13 @@ import { AnalysisReport } from "./analysis-report"
 
 export function MessageAssistant({
   message,
+  userQuestion,
   onExecute,
   onModify,
   interactive,
 }: {
   message: ChatMessage
+  userQuestion: string
   onExecute: () => void
   onModify: (modificationText: string) => void
   interactive: boolean
@@ -49,7 +51,7 @@ export function MessageAssistant({
           {(phase === "dag-ready" ||
             phase === "executing" ||
             phase === "executed") && (
-            <DagPanel plan={plan} onExecute={onExecute} onModify={onModify} interactive={interactive} />
+            <DagPanel plan={plan} userQuestion={userQuestion} onExecute={onExecute} onModify={onModify} interactive={interactive} />
           )}
 
           {(phase === "executing" || phase === "executed") && (
@@ -58,7 +60,7 @@ export function MessageAssistant({
 
           {/* Markdown from backend, or structured report from mock */}
           {(plan.markdown || plan.report) && (
-            <AnalysisReport report={plan.report} markdown={plan.markdown} />
+            <AnalysisReport report={plan.report} markdown={plan.markdown} userQuestion={userQuestion} />
           )}
         </div>
       </div>

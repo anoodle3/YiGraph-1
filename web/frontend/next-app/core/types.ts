@@ -191,3 +191,13 @@ export interface PaginatedResponse<T> {
   page: number
   pageSize: number
 }
+
+// === Feedback types ===
+
+export interface FeedbackEntry {
+  timestamp: string
+  userQuestion: string
+  analysisOutput: string
+  type: "dag" | "report"
+  feedback: "like" | "dislike"
+}

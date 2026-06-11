@@ -45,12 +45,14 @@ def create_app():
     from .routes_manage_dataset import bp as manage_bp
     from .routes_models import bp as models_bp
     from .routes_knowledge_base import bp as knowledge_base_bp
+    from .routes_feedback import bp as feedback_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(documents_bp)
     app.register_blueprint(manage_bp)
     app.register_blueprint(models_bp)
     app.register_blueprint(knowledge_base_bp)
+    app.register_blueprint(feedback_bp)
 
     # ====== Initialize SocketIO and async runtime ======
     socketio.init_app(app)

@@ -5,6 +5,7 @@ import type {
   ChartType,
   DagEdge,
   DagNode,
+  GraphData,
   NodeResult,
   SubProblem,
   WorkflowPlan,
@@ -227,8 +228,27 @@ export function simulateNodeResult(
   const summary = algorithm
     ? `完成 ${algorithm.displayName}（${algorithm.name}）计算，复杂度 ${algorithm.complexity}。对输出结果进行了归一化与排序处理。`
     : `完成子任务「${node.label}」的执行。`
-  const insight = deriveInsight(algorithm, chartData)
-  return { summary, code, chartType, chartData, insight }
+  const subGraph = mockSubGraph()
+  return { summary, code, chartType, chartData, subGraph }
+}
+
+function mockSubGraph(): GraphData {
+  return {
+    nodes: [
+      { id: "Alice", label: "Alice" },
+      { id: "Bob", label: "Bob" },
+      { id: "Carol", label: "Carol" },
+      { id: "CorpX", label: "CorpX 公司" },
+      { id: "Acct1", label: "账户 8801" },
+    ],
+    edges: [
+      { id: "e1", source: "Alice", target: "Bob", label: "¥50,000", tooltip: "2024-03-15 转账" },
+      { id: "e2", source: "Bob", target: "CorpX", label: "¥120,000", tooltip: "2024-03-16 对公转账" },
+      { id: "e3", source: "Alice", target: "Carol", label: "¥30,000" },
+      { id: "e4", source: "Carol", target: "Acct1", label: "¥85,000", tooltip: "2024-03-17 跨行转账" },
+      { id: "e5", source: "CorpX", target: "Acct1", label: "¥200,000", tooltip: "2024-03-18 大额交易" },
+    ],
+  }
 }
 
 function generateChartData(type: ChartType, seedName: string): ChartPoint[] {
@@ -270,18 +290,6 @@ function generateChartData(type: ChartType, seedName: string): ChartPoint[] {
   }))
 }
 
-function deriveInsight(
-  algorithm: Algorithm | undefined,
-  data: ChartPoint[],
-): string {
-  if (!algorithm) return "子任务输出已生成。"
-  const sorted = [...data].sort((a, b) => b.value - a.value)
-  const top = sorted[0]
-  if (!top) return `${algorithm.displayName} 执行完成。`
-  const useCase = algorithm.useCases[0] ?? "分析"
-  return `${algorithm.displayName} 结果表明 "${top.label}" 的指标最高 (${top.value})，结合${useCase}场景值得重点关注。`
-}
-
 function generatePostProcessingCode(
   algorithm: Algorithm | undefined,
   chartType: ChartType,
@@ -314,9 +322,9 @@ export function generateReport(
     if (a) used.push(a)
   }
 
-  const insights = plan.nodes
-    .filter((n) => n.result?.insight)
-    .map((n) => n.result!.insight)
+  const findings = plan.nodes
+    .filter((n) => n.result?.summary)
+    .map((n) => n.result!.summary)
 
   // 根据使用的算法类型生成动态推荐
   const recommendations = buildRecommendations(used)
@@ -331,8 +339,8 @@ export function generateReport(
       `${plan.understanding} 本次工作流共调度了 ${used.length} 个核心图算法（${algoList}），` +
       `输出结构化指标与可视化结论，用于支持后续决策。`,
     keyFindings:
-      insights.length > 0
-        ? insights
+      findings.length > 0
+        ? findings
         : ["工作流已执行完成，详见各节点输出。"],
     recommendations,
     metrics,

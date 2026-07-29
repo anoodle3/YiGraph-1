@@ -8,7 +8,6 @@ import {
   Code2,
   BarChart2,
   Play,
-  Lightbulb,
 } from "lucide-react"
 import { useI18n } from "@/core/i18n/i18n-provider"
 import type { DagNode, WorkflowPlan } from "@/core/types"
@@ -16,6 +15,7 @@ import { useAlgorithms } from "@/core/algorithms-store"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/core/utils"
 import { ChartRenderer } from "./chart-renderer"
+import { SubGraphRenderer } from "./subgraph-renderer"
 import { AlgorithmInfoModal } from "./algorithm-info-modal"
 
 export function ExecutionPanel({ plan }: { plan: WorkflowPlan }) {
@@ -163,13 +163,21 @@ function NodeExecution({
                 {node.result.summary}
               </p>
 
-              {/* Insight */}
-              <div className="flex items-start gap-2 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs text-foreground/90">
-                <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-accent" />
-                <span>{node.result.insight}</span>
-              </div>
+              {/* Sub-graph */}
+              {node.result.subGraph && (
+                <div className="rounded-lg border border-border bg-card">
+                  <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs font-medium">
+                    <BarChart2 className="size-3.5 text-primary" />
+                    {t("dag.visualOutput", "可视化输出")}
+                  </div>
+                  <div className="p-3">
+                    <SubGraphRenderer graph={node.result.subGraph} />
+                  </div>
+                </div>
+              )}
 
               {/* Chart */}
+              {node.result.chartData && (
               <div className="rounded-lg border border-border bg-card">
                 <div className="flex items-center justify-between border-b border-border px-4 py-2">
                   <div className="flex items-center gap-2 text-xs font-medium">
@@ -182,13 +190,15 @@ function NodeExecution({
                 </div>
                 <div className="p-4">
                   <ChartRenderer
-                    type={node.result.chartType}
+                    type={node.result.chartType ?? "bar"}
                     data={node.result.chartData}
                   />
                 </div>
               </div>
+              )}
 
               {/* Code */}
+              {node.result.code && (
               <div className="rounded-lg border border-border bg-card">
                 <button
                   onClick={() => setCodeOpen((v) => !v)}
@@ -208,6 +218,7 @@ function NodeExecution({
                   </pre>
                 )}
               </div>
+              )}
             </div>
           )}
         </div>

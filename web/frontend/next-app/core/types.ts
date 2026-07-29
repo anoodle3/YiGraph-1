@@ -66,10 +66,11 @@ export interface DagEdge {
 
 export interface NodeResult {
   summary: string
-  code: string
-  chartType: ChartType
-  chartData: ChartPoint[]
-  insight: string
+  code?: string
+  chartType?: ChartType
+  chartData?: ChartPoint[]
+  /** Sub-graph for relationship/path visualization */
+  subGraph?: GraphData
 }
 
 export interface ChartPoint {
@@ -152,6 +153,7 @@ export interface GraphEdge {
   source: string
   target: string
   label?: string
+  tooltip?: string
 }
 
 export interface GraphData {

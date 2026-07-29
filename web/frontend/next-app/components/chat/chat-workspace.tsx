@@ -593,7 +593,7 @@ export function ChatWorkspace() {
       if (
         current &&
         current.messages.length === 0 &&
-        current.title === "新的分析会话"
+        !current.title
       ) {
         renameSession(sessionId, truncate(question, 28))
       }

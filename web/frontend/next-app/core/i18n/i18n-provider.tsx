@@ -15,6 +15,7 @@ function getSavedLang(): Lang {
 interface I18nValue {
   lang: Lang
   mounted: boolean
+  ready: boolean
   t: (key: string, fallback?: string) => string
   toggle: () => void
 }
@@ -66,7 +67,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     [],
   )
 
-  const value = React.useMemo(() => ({ lang, mounted, t, toggle }), [lang, mounted, t, toggle, ready])
+  const value = React.useMemo(() => ({ lang, mounted, ready, t, toggle }), [lang, mounted, ready, t, toggle])
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
 }

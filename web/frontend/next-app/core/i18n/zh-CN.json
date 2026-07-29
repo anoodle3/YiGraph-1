@@ -101,6 +101,11 @@
     "cancel": "取消", "confirm": "确认", "delete": "删除", "save": "保存", "close": "关闭",
     "loading": "加载中...", "error": "出错了", "noData": "暂无数据"
   },
+  "time": {
+    "minutesAgo": "{n} 分钟前",
+    "hoursAgo": "{n} 小时前",
+    "daysAgo": "{n} 天前"
+  },
   "dag": {
     "panelTitle": "工作流 DAG", "nodes": "节点", "edges": "边",
     "inspectHint": "点击算法节点查看详情",

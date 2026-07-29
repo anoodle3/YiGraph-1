@@ -76,7 +76,7 @@ export function ChatSessionsProvider({
     hydratedRef.current = true
   }, [])
 
-  const createSession = React.useCallback((title = "新的分析会话") => {
+  const createSession = React.useCallback((title = "") => {
     const id = `s-${Date.now()}`
     const session: ChatSession = {
       id,

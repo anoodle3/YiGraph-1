@@ -111,9 +111,7 @@ export function ThinkingSteps({ plan }: { plan: WorkflowPlan }) {
                           <div className="text-sm font-medium text-foreground">
                             {sp.title}
                           </div>
-                          <div className="mt-0.5 text-xs text-muted-foreground">
-                            {sp.rationale}
-                          </div>
+
                         </div>
                       </li>
                     ))}

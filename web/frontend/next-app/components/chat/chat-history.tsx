@@ -21,7 +21,7 @@ export function ChatHistory({
   onCreate: () => void
   onDelete: (id: string) => void
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [mounted, setMounted] = React.useState(false)
   React.useEffect(() => setMounted(true), [])
   return (
@@ -78,7 +78,7 @@ export function ChatHistory({
                     </div>
                     <div className="min-w-0 flex-1 pr-6">
                       <div className="truncate text-sm font-medium text-foreground">
-                        {s.title}
+                        {s.title || t("chat.heading")}
                       </div>
                       <div className="truncate text-[11px] text-muted-foreground">
                         {preview}
@@ -86,7 +86,7 @@ export function ChatHistory({
                       <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground/80">
                         <Clock className="size-3" />
                         <span suppressHydrationWarning>
-                          {mounted ? formatTime(s.createdAt) : ""}
+                          {mounted ? formatTime(s.createdAt, t, lang) : ""}
                         </span>
                       </div>
                     </div>
@@ -118,7 +118,7 @@ export function ChatHistory({
   )
 }
 
-function formatTime(iso: string) {
+function formatTime(iso: string, t: (key: string, fallback?: string) => string, lang: string) {
   let d: Date
   if (iso.startsWith("offset:")) {
     const offset = Number(iso.slice("offset:".length))
@@ -129,9 +129,9 @@ function formatTime(iso: string) {
   const now = new Date()
   const diffMs = now.getTime() - d.getTime()
   const h = diffMs / 3600_000
-  if (h < 1) return `${Math.max(1, Math.round(diffMs / 60_000))} 分钟前`
-  if (h < 24) return `${Math.round(h)} 小时前`
+  if (h < 1) return t("time.minutesAgo", "{n} 分钟前").replace("{n}", String(Math.max(1, Math.round(diffMs / 60_000))))
+  if (h < 24) return t("time.hoursAgo", "{n} 小时前").replace("{n}", String(Math.round(h)))
   const days = Math.round(h / 24)
-  if (days < 7) return `${days} 天前`
-  return d.toLocaleDateString("zh-CN")
+  if (days < 7) return t("time.daysAgo", "{n} 天前").replace("{n}", String(days))
+  return d.toLocaleDateString(lang === "en-US" ? "en-US" : "zh-CN")
 }

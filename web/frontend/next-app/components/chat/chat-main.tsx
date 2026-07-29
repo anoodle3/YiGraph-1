@@ -49,7 +49,7 @@ export function ChatMain({
           </div>
           <div>
             <h1 className="text-base font-semibold leading-tight">
-              {session?.title ?? t("chat.heading", "新的分析会话")}
+              {session?.title || t("chat.heading", "新的分析会话")}
             </h1>
             <p className="text-xs text-muted-foreground">
               {t("chat.subheading", "自然语言提问 · 自动规划 DAG · 生成可视化报告")}

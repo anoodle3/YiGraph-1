@@ -38,7 +38,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const { t, lang, mounted, toggle } = useI18n()
+  const { t, lang, mounted, ready, toggle } = useI18n()
   const [dark, setDark] = React.useState(false)
 
   React.useEffect(() => {
@@ -46,6 +46,24 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     if (dark) root.classList.add("dark")
     else root.classList.remove("dark")
   }, [dark])
+
+  // 动态设置浏览器标签标题 & html lang
+  React.useEffect(() => {
+    const appTitle = t("app.title")
+    const appSubtitle = t("app.subtitle")
+    const sectionKey =
+      pathname === "/" ? null
+      : pathname?.startsWith("/algorithms") ? "nav.algorithms"
+      : pathname?.startsWith("/datasets") ? "nav.datasets"
+      : pathname?.startsWith("/files") ? "nav.files"
+      : null
+    if (sectionKey) {
+      document.title = `${t(sectionKey)} · ${appTitle}`
+    } else {
+      document.title = `${appTitle} — ${appSubtitle}`
+    }
+    document.documentElement.lang = lang
+  }, [lang, ready, pathname, t])
 
   const NAV = [
     { href: "/", label: t("nav.analysis", "智能分析"), icon: MessageSquareText },

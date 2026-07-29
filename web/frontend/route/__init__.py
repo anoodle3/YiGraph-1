@@ -3,7 +3,7 @@ import os
 import atexit
 import sys
 
-from flask import Flask
+from flask import Flask, redirect
 from flask_cors import CORS
 from flask_socketio import SocketIO 
 
@@ -38,6 +38,10 @@ def create_app():
     app = Flask(__name__)
 
     CORS(app)
+
+    @app.route('/')
+    def index():
+        return redirect('http://localhost:3000')
 
     # ====== Register blueprints (route modules) ======
     from .routes_health import bp as health_bp

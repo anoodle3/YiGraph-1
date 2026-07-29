@@ -105,6 +105,11 @@
     "cancel": "Cancel", "confirm": "Confirm", "delete": "Delete", "save": "Save", "close": "Close",
     "loading": "Loading...", "error": "Error", "noData": "No Data"
   },
+  "time": {
+    "minutesAgo": "{n} min ago",
+    "hoursAgo": "{n} h ago",
+    "daysAgo": "{n} d ago"
+  },
   "dag": {
     "panelTitle": "Workflow DAG", "nodes": "nodes", "edges": "edges",
     "inspectHint": "Click a node to view algorithm details",

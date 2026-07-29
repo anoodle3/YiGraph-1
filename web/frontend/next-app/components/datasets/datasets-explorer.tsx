@@ -169,7 +169,7 @@ function DatasetsExplorerInner() {
                           ) : (
                             <Database className="size-3" />
                           )}
-                          {ds.fileType === "graph-data" ? "图数据" : "原始数据"}
+                          {ds.fileType === "graph-data" ? t("datasets.graphData") : t("datasets.rawData")}
                         </Badge>
                       </td>
                       <td className="px-6 py-3">

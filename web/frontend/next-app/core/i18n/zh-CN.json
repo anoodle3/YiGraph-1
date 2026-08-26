@@ -134,5 +134,13 @@
     "phaseUnderstanding": "正在理解问题", "phaseDecomposing": "正在拆解子问题",
     "phaseSelecting": "正在选择算法", "phaseReady": "DAG 构建完成",
     "phaseExecuting": "工作流执行中", "phaseExecuted": "分析报告已生成", "phaseThinking": "思考中"
+  },
+  "backend": {
+    "startingTitle": "后端服务启动中",
+    "startingDesc": "正在等待后端服务就绪，请稍候…",
+    "reconnectingTitle": "后端连接已断开",
+    "reconnectingDesc": "正在尝试重新连接…",
+    "unreachableTitle": "无法连接后端服务",
+    "unreachableDesc": "请确认后端服务已启动，前端将自动重试连接。"
   }
 }

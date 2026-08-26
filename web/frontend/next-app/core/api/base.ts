@@ -1,9 +1,19 @@
 const START_PORT = 5089
 const PROBE_PATH = "/api/health"
 const STORAGE_KEY = "yigraph_base_url"
+const FALLBACK_URL = `http://localhost:${START_PORT}`
+/** 快路径失败时每次探测分批轮扫的端口数，全范围（49 个）约每 5 次探测覆盖一轮 */
+const SCAN_BATCH = 10
+/** 连续失败多少次才判定后端离线（与遮罩的判定一致） */
+const LIVE_FAILURE_THRESHOLD = 2
 
 let cachedBaseUrl: string | null = null
 let pendingPromise: Promise<string> | null = null
+let probeCount = 0
+let scanCursor = 1
+let consecutiveFailures = 0
+let backendLive = false
+let liveWaiters: Array<() => void> = []
 
 async function probePort(port: number, timeoutMs = 500): Promise<boolean> {
   try {
@@ -19,7 +29,8 @@ async function probePort(port: number, timeoutMs = 500): Promise<boolean> {
   }
 }
 
-async function findBaseUrl(): Promise<string> {
+/** 扫描可用端口，找到返回其 base URL，未找到返回 null。 */
+async function findBaseUrl(): Promise<string | null> {
   try {
     const stored = sessionStorage.getItem(STORAGE_KEY)
     if (stored) {
@@ -38,20 +49,112 @@ async function findBaseUrl(): Promise<string> {
     }
   }
 
-  return `http://localhost:${START_PORT}`
+  return null
+}
+
+function setBackendLive(live: boolean) {
+  if (live === backendLive) return
+  backendLive = live
+  if (live) {
+    // 唤醒所有等待后端上线的 getBaseUrl 调用
+    const waiters = liveWaiters
+    liveWaiters = []
+    for (const w of waiters) w()
+  } else {
+    // 后端掉线：后续 getBaseUrl 需要重新等待上线
+    pendingPromise = null
+  }
+}
+
+function waitForBackendLive(): Promise<void> {
+  if (backendLive) return Promise.resolve()
+  return new Promise((resolve) => liveWaiters.push(resolve))
+}
+
+function cacheBaseUrl(port: number): string {
+  try { sessionStorage.setItem(STORAGE_KEY, String(port)) } catch { /* */ }
+  const url = `http://localhost:${port}`
+  cachedBaseUrl = url
+  return url
 }
 
 export async function getBaseUrl(): Promise<string> {
-  if (cachedBaseUrl) return cachedBaseUrl
+  if (cachedBaseUrl && backendLive) return cachedBaseUrl
   if (!pendingPromise) {
-    pendingPromise = findBaseUrl().then((url) => {
-      cachedBaseUrl = url
-      return url
+    pendingPromise = (async () => {
+      // 先尝试一次立即解析（sessionStorage 快路径 / 端口扫描）
+      const url = await findBaseUrl()
+      if (url) {
+        setBackendLive(true)
+        return url
+      }
+      setBackendLive(false)
+      // 后端未上线：等待探测发现后端（遮罩的轮询会持续探测并通知），
+      // 期间不向后端发起注定失败的请求
+      await waitForBackendLive()
+      return cachedBaseUrl ?? FALLBACK_URL
+    })().then((url) => {
+      // 不覆盖并发探测（probeBackend）已写入的新地址
+      if (!cachedBaseUrl) cachedBaseUrl = url
+      return cachedBaseUrl
     })
   }
   return pendingPromise
 }
 
+/**
+ * 探测后端是否可达。可达时返回其 base URL 并更新缓存，否则返回 null。
+ * 由启动遮罩轮询使用。
+ * 先探测最可能的端口（上次使用的端口 / 起始端口）；
+ * 失败时首次探测全量扫描（页面加载时尽快定位后端），
+ * 之后分批轮扫剩余端口，摊平请求量，后端漂移到任意端口约 10s 内可被发现。
+ */
+export async function probeBackend(timeoutMs = 400): Promise<string | null> {
+  probeCount += 1
+
+  let found: number | null = null
+  try {
+    const stored = parseInt(sessionStorage.getItem(STORAGE_KEY) ?? "", 10)
+    if (!isNaN(stored) && (await probePort(stored, timeoutMs))) found = stored
+  } catch { /* sessionStorage might be unavailable */ }
+  if (found === null && (await probePort(START_PORT, timeoutMs))) {
+    found = START_PORT
+  }
+
+  if (found === null) {
+    if (probeCount === 1) {
+      // 首次探测：全量扫描
+      for (let i = 1; i < 50; i++) {
+        const port = START_PORT + i
+        if (await probePort(port, timeoutMs)) {
+          found = port
+          break
+        }
+      }
+    } else {
+      // 分批轮扫：每次推进 SCAN_BATCH 个端口
+      for (let k = 0; k < SCAN_BATCH; k++) {
+        const port = START_PORT + scanCursor
+        scanCursor = scanCursor >= 49 ? 1 : scanCursor + 1
+        if (await probePort(port, timeoutMs)) {
+          found = port
+          break
+        }
+      }
+    }
+  }
+
+  if (found === null) {
+    consecutiveFailures += 1
+    if (consecutiveFailures >= LIVE_FAILURE_THRESHOLD) setBackendLive(false)
+    return null
+  }
+  consecutiveFailures = 0
+  const url = cacheBaseUrl(found)
+  setBackendLive(true)
+  return url
+}
+
 export function getBaseUrlSync(): string {
-  return cachedBaseUrl ?? `http://localhost:${START_PORT}`
+  return cachedBaseUrl ?? FALLBACK_URL
 }

@@ -19,6 +19,7 @@ import { ChatSessionsProvider } from "@/core/chat-store"
 import { DatasetsProvider } from "@/core/datasets-store"
 import { ModelsProvider } from "@/core/models-store"
 import { I18nProvider, useI18n } from "@/core/i18n/i18n-provider"
+import { BackendOverlay } from "@/components/backend-overlay"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -150,6 +151,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+
+      {/* Backend not-ready overlay */}
+      <BackendOverlay />
     </div>
   )
 }

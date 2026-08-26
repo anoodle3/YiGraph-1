@@ -138,5 +138,13 @@
     "phaseUnderstanding": "Understanding", "phaseDecomposing": "Decomposing",
     "phaseSelecting": "Selecting Algorithms", "phaseReady": "DAG Ready",
     "phaseExecuting": "Executing Workflow", "phaseExecuted": "Report Generated", "phaseThinking": "Thinking"
+  },
+  "backend": {
+    "startingTitle": "Backend Starting",
+    "startingDesc": "Waiting for the backend service to be ready, please wait...",
+    "reconnectingTitle": "Backend Disconnected",
+    "reconnectingDesc": "Trying to reconnect...",
+    "unreachableTitle": "Cannot Reach Backend",
+    "unreachableDesc": "Please make sure the backend is running. Retrying automatically..."
   }
 }

@@ -245,7 +245,7 @@ def handle_chat_request(data):
                     modification_request = modifications or user_message
                     logger.info(f"DAG modification request received: {modification_request}")
 
-                    result = await chat_service.process_dag_modification(modification_request)
+                    result = await chat_service.process_dag_modification(modification_request, callback=send_response)
 
                     if result.get("success"):
                         dag_content = chat_service._convert_dag_to_frontend_format(result)

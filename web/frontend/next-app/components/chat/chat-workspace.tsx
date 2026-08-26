@@ -8,12 +8,13 @@ import { useModels } from "@/core/models-store"
 import { ChatHistory } from "./chat-history"
 import { ChatMain } from "./chat-main"
 import { planWorkflow, simulateNodeResult, generateReport, reportToMarkdown } from "@/core/dag-planner"
-import type { ChatMessage, WorkflowPlan } from "@/core/types"
+import type { ChatMessage, SubProblem, WorkflowPlan } from "@/core/types"
 import type { ChatSettings } from "./chat-input"
 import {
   connectChatSocket,
   disconnectChatSocket,
   isChatConnected,
+  matchAlgorithm,
   sendChatRequest,
 } from "@/core/api/chat"
 import {
@@ -149,43 +150,81 @@ export function ChatWorkspace() {
               break
             }
 
+            case "subproblems": {
+              finishUnderstandingProgress(sessionId, assistantMsgId)
+              const subProblems: SubProblem[] = result.subqueries.map(
+                (q, i) => ({
+                  id: `sp-${i + 1}`,
+                  title: q.query,
+                  rationale: "",
+                  algorithmId: "",
+                }),
+              )
+              updatePlan(sessionId, assistantMsgId, (p) => ({
+                ...p,
+                phase: "decomposing" as const,
+                subProblems,
+                progress: {
+                  ...p.progress,
+                  understanding: 1,
+                  decomposing: 0,
+                  selecting: 0,
+                },
+              }))
+              // 真实子问题列表已到：走完拆解进度（UI 按进度逐条揭示真实条目）
+              animatePhase(sessionId, assistantMsgId, "decomposing", updatePlan)
+              break
+            }
+
+            case "algorithm_selected": {
+              const sel = result.selection
+              updatePlan(sessionId, assistantMsgId, (p) => {
+                // 按子问题原文匹配（与 adapter.subqueries 顺序一致）
+                const subProblems = p.subProblems.map((sp, i) => {
+                  const q = adapter.subqueries[i]
+                  if (!q || q.query !== sel.question) return sp
+                  const algo = sel.algorithm
+                    ? matchAlgorithm(sel.algorithm, algorithms)
+                    : undefined
+                  const taskLabel =
+                    sel.task_type === "graph_query"
+                      ? "Graph Query / 图查询"
+                      : sel.task_type === "numeric_analysis"
+                        ? "Numeric Analysis / 数值分析"
+                        : undefined
+                  return {
+                    ...sp,
+                    algorithmId: algo?.id ?? "",
+                    rationale: algo
+                      ? `${algo.displayName}（${algo.name}）：${algo.summary}`
+                      : (taskLabel ?? sp.rationale),
+                  }
+                })
+                const total = Math.max(1, adapter.subqueries.length)
+                const done = Math.min(adapter.stepAlgorithms.size, total)
+                return {
+                  ...p,
+                  phase: "selecting" as const,
+                  subProblems,
+                  progress: {
+                    ...p.progress,
+                    selecting: done / total,
+                  },
+                }
+              })
+              break
+            }
+
             case "dag": {
               finishUnderstandingProgress(sessionId, assistantMsgId)
               const planData = convertOldDagToPlan(
                 result.dag,
                 adapter.thinkingText,
                 algorithms,
+                adapter.stepAlgorithms,
               )
 
-              // decomposing
-              updatePlan(sessionId, assistantMsgId, (p) => ({
-                ...p,
-                phase: "decomposing" as const,
-                understanding: planData.understanding,
-                subProblems: planData.subProblems,
-                progress: { understanding: 1, decomposing: 0, selecting: 0 },
-              }))
-              await sleep(300)
-              updatePlan(sessionId, assistantMsgId, (p) => ({
-                ...p,
-                progress: { ...p.progress, decomposing: 1 },
-              }))
-              await sleep(200)
-
-              // selecting
-              updatePlan(sessionId, assistantMsgId, (p) => ({
-                ...p,
-                phase: "selecting" as const,
-                progress: { ...p.progress, selecting: 0 },
-              }))
-              await sleep(300)
-              updatePlan(sessionId, assistantMsgId, (p) => ({
-                ...p,
-                progress: { ...p.progress, selecting: 1 },
-              }))
-              await sleep(200)
-
-              // dag-ready
+              // dag-ready：拆解/选算法过程已由上面的真实事件流驱动
               savedNodes = planData.nodes
               updatePlan(sessionId, assistantMsgId, (p) => ({
                 ...p,
@@ -484,26 +523,81 @@ export function ChatWorkspace() {
                 }))
                 break
 
+              case "subproblems": {
+                finishUnderstandingProgress(activeId, assistantMsgId)
+                const subProblems: SubProblem[] = result.subqueries.map(
+                  (q, i) => ({
+                    id: `sp-${i + 1}`,
+                    title: q.query,
+                    rationale: "",
+                    algorithmId: "",
+                  }),
+                )
+                updatePlan(activeId, assistantMsgId, (p) => ({
+                  ...p,
+                  phase: "decomposing" as const,
+                  subProblems,
+                  progress: {
+                    ...p.progress,
+                    understanding: 1,
+                    decomposing: 0,
+                    selecting: 0,
+                  },
+                }))
+                // 修改后的真实子问题列表已到：走完拆解进度（UI 按进度逐条揭示）
+                animatePhase(activeId, assistantMsgId, "decomposing", updatePlan)
+                break
+              }
+
+              case "algorithm_selected": {
+                const sel = result.selection
+                updatePlan(activeId, assistantMsgId, (p) => {
+                  // 按子问题原文匹配（与 adapter.subqueries 顺序一致）
+                  const subProblems = p.subProblems.map((sp, i) => {
+                    const q = adapter.subqueries[i]
+                    if (!q || q.query !== sel.question) return sp
+                    const algo = sel.algorithm
+                      ? matchAlgorithm(sel.algorithm, algorithms)
+                      : undefined
+                    const taskLabel =
+                      sel.task_type === "graph_query"
+                        ? "Graph Query / 图查询"
+                        : sel.task_type === "numeric_analysis"
+                          ? "Numeric Analysis / 数值分析"
+                          : undefined
+                    return {
+                      ...sp,
+                      algorithmId: algo?.id ?? "",
+                      rationale: algo
+                        ? `${algo.displayName}（${algo.name}）：${algo.summary}`
+                        : (taskLabel ?? sp.rationale),
+                    }
+                  })
+                  const total = Math.max(1, adapter.subqueries.length)
+                  const done = Math.min(adapter.stepAlgorithms.size, total)
+                  return {
+                    ...p,
+                    phase: "selecting" as const,
+                    subProblems,
+                    progress: {
+                      ...p.progress,
+                      selecting: done / total,
+                    },
+                  }
+                })
+                break
+              }
+
               case "dag": {
                 finishUnderstandingProgress(activeId, assistantMsgId)
                 const planData = convertOldDagToPlan(
                   result.dag,
                   adapter.thinkingText,
                   algorithms,
+                  adapter.stepAlgorithms,
                 )
-                updatePlan(activeId, assistantMsgId, (p) => ({
-                  ...p,
-                  phase: "decomposing" as const,
-                  understanding: planData.understanding,
-                  subProblems: planData.subProblems,
-                }))
-                await sleep(300)
-                updatePlan(activeId, assistantMsgId, (p) => ({
-                  ...p,
-                  phase: "selecting" as const,
-                }))
-                await sleep(300)
 
+                // dag-ready：拆解/选算法过程已由上面的真实事件流驱动
                 savedNodes = planData.nodes
                 updatePlan(activeId, assistantMsgId, (p) => ({
                   ...p,

@@ -13,10 +13,13 @@ import type {
   WorkflowPlan,
 } from "@/core/types"
 import type {
+
+  AlgorithmSelectedContent,
   ChatResponse,
   OldDag,
   OldDagEdge,
   OldDagNode,
+  OldSubquery,
 } from "@/core/api/chat"
 import { matchAlgorithm, parseAlgorithmName } from "@/core/api/chat"
 
@@ -43,11 +46,23 @@ export function hasAlgorithm(tasktype: string): boolean {
 
 // --- 适配结果 ---
 
+/** 单个子问题选定的算法（key 为子问题原文） */
+export interface StepAlgorithm {
+  algorithm: string | null
+  taskType: string
+}
+
 export interface AdapterState {
   /** 累积的 thinking 文本 */
   thinkingText: string
+  /** 当前 thinking 文本是否仅为占位提示（真实理解文本到达后将被替换） */
+  thinkingIsPlaceholder: boolean
   /** 当前收集到的 DAG（可能为 null） */
   dag: OldDag | null
+  /** 拆解出的子问题列表（subproblems 事件） */
+  subqueries: OldSubquery[]
+  /** 每个子问题选定的算法（algorithm_selected 事件，key 为子问题原文） */
+  stepAlgorithms: Map<string, StepAlgorithm>
   /** 当前收集到的结果文本段落 */
   resultParagraphs: string[]
   /** 是否已经完成（收到 stream_end） */
@@ -59,7 +74,10 @@ export interface AdapterState {
 export function createAdapterState(): AdapterState {
   return {
     thinkingText: "",
+    thinkingIsPlaceholder: false,
     dag: null,
+    subqueries: [],
+    stepAlgorithms: new Map(),
     resultParagraphs: [],
     finished: false,
     error: null,
@@ -86,14 +104,45 @@ export function processChatEvent(
   }
 
   if (event.type === "thinking" && event.contentType === "text") {
-    state.thinkingText += String(event.content ?? "")
-    return { kind: "thinking", text: String(event.content ?? "") }
+    const text = String(event.content ?? "")
+    if (event.placeholder) {
+      // 占位提示：暂存，等真实理解文本到达后替换
+      state.thinkingText = text
+      state.thinkingIsPlaceholder = true
+    } else if (state.thinkingIsPlaceholder) {
+      // 真实理解文本到达：替换占位提示
+      state.thinkingText = text
+      state.thinkingIsPlaceholder = false
+    } else {
+      state.thinkingText += text
+    }
+    return { kind: "thinking", text }
   }
 
   if (event.type === "result") {
     if (event.contentType === "dag") {
       state.dag = event.content as OldDag
       return { kind: "dag", dag: state.dag }
+    }
+    if (event.contentType === "subproblems") {
+      const content = event.content as { subqueries?: OldSubquery[] } | undefined
+      state.subqueries = content?.subqueries ?? []
+      return { kind: "subproblems", subqueries: state.subqueries }
+    }
+    if (event.contentType === "algorithm_selected") {
+      const selection = event.content as AlgorithmSelectedContent | undefined
+      if (selection?.question) {
+        state.stepAlgorithms.set(selection.question, {
+          algorithm: selection.algorithm ?? null,
+          taskType: selection.task_type ?? "",
+        })
+      }
+      return {
+        kind: "algorithm_selected",
+        selection:
+          selection ??
+          ({ step_id: -1, question: "", task_type: "" } as AlgorithmSelectedContent),
+      }
     }
     if (event.contentType === "text") {
       const text = String(event.content ?? "")
@@ -108,6 +157,8 @@ export function processChatEvent(
 export type AdapterEvent =
   | { kind: "thinking"; text: string }
   | { kind: "dag"; dag: OldDag }
+  | { kind: "subproblems"; subqueries: OldSubquery[] }
+  | { kind: "algorithm_selected"; selection: AlgorithmSelectedContent }
   | { kind: "result_text"; text: string }
   | { kind: "stream_end" }
   | { kind: "error"; message: string }
@@ -118,12 +169,13 @@ export type AdapterEvent =
 /**
  * 将旧版 DAG 转换为新版 WorkflowPlan 所需的核心数据。
  * 只保留后端返回的子任务节点，不添加预处理/汇总节点。
- * 从 tasktype 解析算法名并匹配算法库。
+ * 优先使用 algorithm_selected 事件累积的真实算法 id，其次才从 tasktype 解析。
  */
 export function convertOldDagToPlan(
   dag: OldDag,
   understanding: string,
   algorithms: Algorithm[],
+  stepAlgorithms?: Map<string, StepAlgorithm>,
 ): Pick<
   WorkflowPlan,
   "understanding" | "subProblems" | "nodes" | "edges"
@@ -153,13 +205,18 @@ export function convertOldDagToPlan(
     const nodeId = `n-${i + 1}`
     idMap.set(on.id, nodeId)
 
-    const algoName = parseAlgorithmName(on.tasktype)
+    // 优先用 algorithm_selected 事件里的真实算法 id
+    const selected = stepAlgorithms?.get(on.label)
+    const algoName = selected?.algorithm ?? parseAlgorithmName(on.tasktype)
     const algo = algoName ? matchAlgorithm(algoName, algorithms) : undefined
-    const taskLabel = taskTypeLabel(on.tasktype)
+    const taskLabel =
+      selected?.taskType === "graph_query"
+        ? "Graph Query / 图查询"
+        : taskTypeLabel(on.tasktype)
 
     const sp: SubProblem = {
       id: `sp-${i + 1}`,
-      title: on.label.slice(0, 40),
+      title: on.label,
       rationale: algo
         ? `${algo.displayName}（${algo.name}）：${algo.summary}`
         : taskLabel,
@@ -170,7 +227,7 @@ export function convertOldDagToPlan(
 
     nodes.push({
       id: nodeId,
-      label: on.label.slice(0, 50),
+      label: on.label,
       algorithmId: algo?.id ?? "",
       subProblemId: sp.id,
       status: "pending",

@@ -482,7 +482,7 @@ class GraphWorkflowDAG:
             "topological_order": [str(sid) for sid in topological_order],
             "edges": edges_info
         }
-    
+
     def export_as_dict(self) -> Dict[str, Any]:
         """将DAG转换为字典格式"""
         steps_info = []
@@ -662,3 +662,47 @@ class GraphWorkflowDAG:
             if not isinstance(depends_on, list):
                 raise ValueError(
                     f"subqueries[{idx}]['depends_on'] 必须是 list 或省略")
+
+
+def dag_info_to_frontend_format(dag_info: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将 get_dag_info() 返回的 dag_info 字典转换为旧版前端 chat 协议使用的 DAG 格式。
+
+    Args:
+        dag_info: DAG 信息字典（含 steps / edges / topological_order）。
+
+    Returns:
+        {"nodes": [{"id", "label", "tasktype"}], "edges": [{"from", "to"}]}
+    """
+    steps = dag_info.get("steps", {}) or {}
+
+    nodes = []
+    for step_id, step_info in steps.items():
+        task_type = step_info.get("task_type", "")
+        algorithm = step_info.get("algorithm", "")
+
+        if task_type == "graph_algorithm":
+            tasktype_str = f"Graph Algorithm ({algorithm})" if algorithm else "Graph Algorithm"
+        elif task_type == "numeric_analysis":
+            tasktype_str = "Numeric Analysis"
+        else:
+            tasktype_str = "Unknown"
+
+        nodes.append({
+            "id": str(step_id),
+            "label": step_info.get("question", ""),
+            "tasktype": tasktype_str
+        })
+
+    edges = dag_info.get("edges", [])
+    if not edges:
+        topological_order = dag_info.get("topological_order", [])
+        edges = [
+            {"from": str(topological_order[i]), "to": str(topological_order[i + 1])}
+            for i in range(len(topological_order) - 1)
+        ]
+
+    return {
+        "nodes": nodes,
+        "edges": edges
+    }

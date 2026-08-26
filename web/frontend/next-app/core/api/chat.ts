@@ -12,9 +12,11 @@ import type { Algorithm } from "@/core/types"
 
 export interface ChatResponse {
   type: "thinking" | "result" | "stream_end"
-  contentType?: "text" | "dag" | "code"
+  contentType?: "text" | "dag" | "code" | "subproblems" | "algorithm_selected"
   content?: unknown
   error?: string
+  /** 标记为占位提示（如开头的 "Analyzing your question..."），真实文本到达后应被替换 */
+  placeholder?: boolean
 }
 
 export interface OldDagNode {
@@ -31,6 +33,25 @@ export interface OldDagEdge {
 export interface OldDag {
   nodes: OldDagNode[]
   edges: OldDagEdge[]
+}
+
+/** subproblems 事件：拆解出的子问题列表（与后端 subquery_plan 一致） */
+export interface OldSubquery {
+  id: string
+  query: string
+  depends_on: string[]
+}
+
+export interface SubproblemsContent {
+  subqueries: OldSubquery[]
+}
+
+/** algorithm_selected 事件：单个子问题选定的算法 */
+export interface AlgorithmSelectedContent {
+  step_id: number
+  question: string
+  task_type: string
+  algorithm?: string | null
 }
 
 // --- 发送参数 ---

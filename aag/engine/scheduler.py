@@ -11,7 +11,8 @@ from typing import Any, Dict, Optional, Callable, List, Tuple, Union, Set
 
 from sympy import N
 from aag.config.engine_config import *
-from aag.models.graph_workflow_dag import GraphWorkflowDAG, WorkflowStep, OutputSchema, OutputField
+
+from aag.models.graph_workflow_dag import GraphWorkflowDAG, WorkflowStep, OutputSchema, OutputField, dag_info_to_frontend_format
 from aag.models.task_types import GraphAnalysisSubType, GraphAnalysisType
 from aag.reasoner.model_deployment import Reasoner
 from aag.engine.router import QueryRouter, QueryType
@@ -341,12 +342,20 @@ class Scheduler:
         if mode == "expert":
             return self._execute_graph_expert_mode(query)
 
-        self._build_dag_from_query(query, decompose)
-        self._find_algorithm()
+        self._build_dag_from_query(query, decompose, callback)
+        self._find_algorithm(callback=callback)
 
         print("✅ Initial DAG build and algorithm selection done")
         self.dag.print_dag_info()
-        
+
+        # 规划完成后立即下发 DAG（拆解/选算法过程已通过 callback 逐条流式下发），
+        if callback:
+            callback({
+                "type": "result",
+                "contentType": "dag",
+                "content": dag_info_to_frontend_format(self.dag.get_dag_info()),
+            })
+
         if mode == "interact":
             dag_info = self.dag.get_dag_info()
             return {
@@ -627,12 +636,18 @@ class Scheduler:
                 "input_hint": "Enter expert instructions in natural language; the system will generate subqueries."
             }
 
-    async def expert_modify_dag(self, modification_request: str) -> Dict[str, Any]:
+    async def expert_modify_dag(
+        self,
+        modification_request: str,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    ) -> Dict[str, Any]:
         """
         Interact mode: modify DAG per user request.
 
         Args:
             modification_request: User modification request (natural language).
+            callback: Optional callback for streaming events
+                (subproblems after revision / algorithm_selected per step).
 
         Returns:
             Dict with updated DAG info.
@@ -641,10 +656,19 @@ class Scheduler:
             return {
                 "error": "DAG not built yet; please enter a question to generate the DAG first."
             }
-        
+
         try:
             self.dag.modify_dag(self.reasoner, modification_request)
-            self._find_algorithm()
+            # 流式下发修改后的子问题列表
+            if callback:
+                subquery_plan = self.dag.get_subquery_plan()
+                if isinstance(subquery_plan, dict) and subquery_plan.get("subqueries"):
+                    callback({
+                        "type": "result",
+                        "contentType": "subproblems",
+                        "content": {"subqueries": subquery_plan.get("subqueries", [])},
+                    })
+            self._find_algorithm(callback=callback)
             dag_info = self.dag.get_dag_info()
             return {
                 "message": "DAG updated.",
@@ -896,13 +920,20 @@ class Scheduler:
             logger.warning(f"Failed to get graph schema summary: {e}")
             return None
 
-    def _build_dag_from_query(self, query: str, decompose: bool = True) -> GraphWorkflowDAG:
+    def _build_dag_from_query(
+        self,
+        query: str,
+        decompose: bool = True,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    ) -> GraphWorkflowDAG:
         """
         Convert user query to DAG, including query rewrite.
 
         Args:
             query: User query.
             decompose: Whether to decompose the query.
+            callback: Optional callback for streaming events
+                (thinking text after rewrite / subproblems after decomposition).
 
         Returns:
             Built DAG.
@@ -937,26 +968,58 @@ class Scheduler:
                 logger.info("🔗 Concept mappings:")
                 for mapping in mapped_concepts:
                     logger.info(f"  - {mapping.get('original_concept')} → {mapping.get('mapped_to')}")
-            
+
             # Use rewritten query for planning
             query_to_use = rewritten_query
-            
+
+            # 流式下发真实的"理解"文本（改写结果 + 推理依据 + 概念映射）
+            if callback:
+                parts = [f"已理解问题：{rewritten_query}"]
+                if reasoning:
+                    parts.append(reasoning)
+                if mapped_concepts:
+                    pairs = [
+                        f"{m.get('original_concept')} → {m.get('mapped_to')}"
+                        for m in mapped_concepts
+                        if m.get("original_concept")
+                    ]
+                    if pairs:
+                        parts.append("关键概念映射：" + "；".join(pairs))
+                callback({
+                    "type": "thinking",
+                    "contentType": "text",
+                    "content": "\n".join(parts) + "\n"
+                })
+
         except Exception as e:
             logger.warning(f"⚠️ Query rewriting failed: {e}, using original query")
             query_to_use = query
-        
+
         # Step 4: Continue with existing flow (plan subqueries)
         subquery_plan = self.reasoner.plan_subqueries(decompose, query_to_use)
+        if callback and isinstance(subquery_plan, dict) and subquery_plan.get("subqueries"):
+            callback({
+                "type": "result",
+                "contentType": "subproblems",
+                "content": {"subqueries": subquery_plan.get("subqueries", [])},
+            })
         return self.build_dag_from_subquery_plan(subquery_plan)
 
 
     def _find_algorithm(
         self,
         respect_preassigned: bool = False,
-        skip_step_ids: Optional[Set[int]] = None
+        skip_step_ids: Optional[Set[int]] = None,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None
     ):
         """
         Walk the DAG and assign a graph algorithm to each step from its question.
+
+        Args:
+            respect_preassigned: Keep expert-assigned algorithms instead of re-matching.
+            skip_step_ids: Step IDs to skip algorithm auto-match.
+            callback: Optional callback for streaming; each step emits an
+                "algorithm_selected" event once its algorithm/task type is resolved.
         """
         skip_step_ids = skip_step_ids or set()
         for step in self.dag.steps.values():
@@ -997,10 +1060,12 @@ class Scheduler:
                 step.task_type = GraphAnalysisType.GRAPH_QUERY
                 step.graph_algorithm = None
                 logger.info(f"✅ Classified as graph query | question: {step.question}, task_type: {step.task_type}, reason: {question_classification.get('reason', '')}")
+                self._emit_algorithm_selected(callback, step, "graph_query", None)
             elif question_type == "numeric_analysis":
                 step.task_type = GraphAnalysisType.NUMERIC_ANALYSIS
                 step.graph_algorithm = None
                 logger.info(f"✅ Classified as numeric analysis | question: {step.question}, task_type: {step.task_type}, reason: {question_classification.get('reason', '')}")
+                self._emit_algorithm_selected(callback, step, "numeric_analysis", None)
             else:
                 logger.info(f"📋 Task type selection | question: {step.question}")
                 task_type_list = self.expert_search_engine.retrieve_task_type(step.question)
@@ -1068,6 +1133,28 @@ class Scheduler:
                 step.task_type = GraphAnalysisType.GRAPH_ALGORITHM
                 step.graph_algorithm = selected_algorithm_id
                 logger.info(f"✅ Algorithm selected | question: {step.question}, task_type: {selected_task_type_id}, algorithm: {step.graph_algorithm}")
+                self._emit_algorithm_selected(callback, step, str(selected_task_type_id), selected_algorithm_id)
+
+    def _emit_algorithm_selected(
+        self,
+        callback: Optional[Callable[[Dict[str, Any]], None]],
+        step: WorkflowStep,
+        task_type: str,
+        algorithm: Optional[str],
+    ):
+        """流式下发单个 step 的算法选择结果（algorithm_selected 事件）。"""
+        if not callback:
+            return
+        callback({
+            "type": "result",
+            "contentType": "algorithm_selected",
+            "content": {
+                "step_id": int(step.step_id),
+                "question": step.question,
+                "task_type": task_type,
+                "algorithm": algorithm,
+            },
+        })
 
     async def _run_algorithm_pipeline(self):
         analysis_result = ""

@@ -18,7 +18,6 @@ import { useAlgorithms } from "@/core/algorithms-store"
 import { submitFeedback } from "@/core/api/feedback"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/core/utils"
 import { AlgorithmInfoModal } from "./algorithm-info-modal"
 import {
@@ -205,12 +204,42 @@ export function DagPanel({
 interface Pos {
   x: number
   y: number
+  h: number
 }
 
 const NODE_W = 200
 const NODE_MIN_H = 78
 const COL_GAP = 260
 const ROW_GAP = 32
+// 长标签换行的高度估算参数：中文每字约 14px，节点内可用宽度约 172px
+const LABEL_CHARS_PER_LINE = 10
+const LABEL_LINE_HEIGHT = 20
+const NODE_BASE_H = 58
+
+/** 根据标签长度估算节点高度（标签会换行显示） */
+function estimateNodeHeight(label: string): number {
+  const lines = Math.max(
+    1,
+    Math.ceil((label?.length ?? 0) / LABEL_CHARS_PER_LINE),
+  )
+  return Math.max(NODE_MIN_H, NODE_BASE_H + (lines - 1) * LABEL_LINE_HEIGHT)
+}
+
+/** 将一列节点自上而下堆叠，返回列底部的 y 坐标 */
+function stackColumn(
+  items: DagNode[],
+  x: number,
+  startY: number,
+  positions: Record<string, Pos>,
+): number {
+  let y = startY
+  for (const n of items) {
+    const h = estimateNodeHeight(n.label)
+    positions[n.id] = { x, y, h }
+    y += h + ROW_GAP
+  }
+  return y - ROW_GAP
+}
 
 function computeLayout(
   nodes: DagNode[],
@@ -224,23 +253,26 @@ function computeLayout(
 
   if (head || tail) {
     const middle = nodes.filter((n) => n !== head && n !== tail)
-    const totalHeight = Math.max(
-      middle.length * NODE_MIN_H + (middle.length - 1) * ROW_GAP,
-      NODE_MIN_H,
+    const middleTotal = middle.reduce(
+      (s, n) => s + estimateNodeHeight(n.label) + ROW_GAP,
+      0,
     )
+    const headH = head ? estimateNodeHeight(head.label) : 0
+    const tailH = tail ? estimateNodeHeight(tail.label) : 0
+    const totalHeight = Math.max(middleTotal, headH, tailH, NODE_MIN_H)
     if (head) {
-      positions[head.id] = { x: 20, y: totalHeight / 2 - NODE_MIN_H / 2 + 20 }
-    }
-    middle.forEach((n, i) => {
-      positions[n.id] = {
-        x: 20 + COL_GAP,
-        y: 20 + i * (NODE_MIN_H + ROW_GAP),
+      positions[head.id] = {
+        x: 20,
+        y: (totalHeight - headH) / 2 + 20,
+        h: headH,
       }
-    })
+    }
+    stackColumn(middle, 20 + COL_GAP, 20, positions)
     if (tail) {
       positions[tail.id] = {
         x: 20 + COL_GAP * 2,
-        y: totalHeight / 2 - NODE_MIN_H / 2 + 20,
+        y: (totalHeight - tailH) / 2 + 20,
+        h: tailH,
       }
     }
     return positions
@@ -264,27 +296,9 @@ function computeLayout(
     (n) => incoming.has(n.id) && outgoing.has(n.id),
   )
 
-  const maxRows = Math.max(sources.length, intermediates.length, sinks.length, 1)
-  const totalHeight = Math.max(
-    maxRows * NODE_MIN_H + (maxRows - 1) * ROW_GAP,
-    NODE_MIN_H,
-  )
-
-  sources.forEach((n, i) => {
-    positions[n.id] = { x: 20, y: 20 + i * (NODE_MIN_H + ROW_GAP) }
-  })
-  intermediates.forEach((n, i) => {
-    positions[n.id] = {
-      x: 20 + COL_GAP,
-      y: 20 + i * (NODE_MIN_H + ROW_GAP),
-    }
-  })
-  sinks.forEach((n, i) => {
-    positions[n.id] = {
-      x: 20 + COL_GAP * 2,
-      y: 20 + i * (NODE_MIN_H + ROW_GAP),
-    }
-  })
+  stackColumn(sources, 20, 20, positions)
+  stackColumn(intermediates, 20 + COL_GAP, 20, positions)
+  stackColumn(sinks, 20 + COL_GAP * 2, 20, positions)
 
   return positions
 }
@@ -309,7 +323,7 @@ function DagCanvas({
     400,
   ) + 20
   const height = Math.max(
-    ...allPos.map((p) => p.y + NODE_MIN_H),
+    ...allPos.map((p) => p.y + p.h),
     200,
   ) + 20
 
@@ -403,9 +417,9 @@ function EdgePath({
   const sourceNode = nodes.find((n) => n.id === edge.source)
   const targetNode = nodes.find((n) => n.id === edge.target)
   const x1 = from.x + NODE_W
-  const y1 = from.y + NODE_MIN_H / 2
+  const y1 = from.y + from.h / 2
   const x2 = to.x
-  const y2 = to.y + NODE_MIN_H / 2
+  const y2 = to.y + to.h / 2
   const midX = (x1 + x2) / 2
   const d = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`
 
@@ -507,16 +521,9 @@ function DagNodeBox({
           {node.id}
         </span>
       </div>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="mt-1 truncate text-sm font-semibold text-foreground cursor-default">
-            {node.label}
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[200px]">
-          {node.label}
-        </TooltipContent>
-      </Tooltip>
+      <div className="mt-1 break-words text-sm font-semibold leading-snug text-foreground">
+        {node.label}
+      </div>
       {isHead || isTail ? (
         <span className="mt-auto text-[11px] text-muted-foreground">
           {isHead

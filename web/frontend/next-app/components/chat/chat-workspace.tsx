@@ -10,19 +10,15 @@ import { ChatMain } from "./chat-main"
 import { planWorkflow, simulateNodeResult, generateReport, reportToMarkdown } from "@/core/dag-planner"
 import type { ChatMessage, SubProblem, WorkflowPlan } from "@/core/types"
 import type { ChatSettings } from "./chat-input"
-import {
-  connectChatSocket,
-  disconnectChatSocket,
-  isChatConnected,
-  matchAlgorithm,
-  sendChatRequest,
-} from "@/core/api/chat"
+import { isChatConnected, matchAlgorithm, sendChatRequest } from "@/core/api/chat"
 import {
   createAdapterState,
   processChatEvent,
   convertOldDagToPlan,
 } from "@/core/chat-adapter"
-import { getBaseUrl } from "@/core/api/base"
+
+// 理解阶段进度条定时器（每个消息独立；模块级——切页/重挂载不影响进行中的动画）
+const progressTimers = new Map<string, ReturnType<typeof setInterval>>()
 
 export function ChatWorkspace() {
   const {
@@ -47,21 +43,6 @@ export function ChatWorkspace() {
     interactiveMode: false,
   })
 
-  // WebSocket 连接管理
-  const wsRef = React.useRef(false)
-  React.useEffect(() => {
-    if (wsRef.current) return
-    wsRef.current = true
-    ;(async () => {
-      const url = await getBaseUrl()
-      connectChatSocket(url)
-    })()
-    return () => {
-      disconnectChatSocket()
-      wsRef.current = false
-    }
-  }, [])
-
   // Auto-select first model / dataset
   React.useEffect(() => {
     if (!settings.model && models.length > 0) {
@@ -79,21 +60,18 @@ export function ChatWorkspace() {
     if (!activeId && sessions[0]) selectSession(sessions[0].id)
   }, [activeId, sessions, selectSession])
 
-  // 理解阶段进度条缓慢前进的定时器（每个消息独立）
-  const progressTimersRef = React.useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
-
   function startUnderstandingProgress(sessionId: string, msgId: string) {
     const key = `${sessionId}-${msgId}`
-    if (progressTimersRef.current.has(key)) return
+    if (progressTimers.has(key)) return
     let p = 0
     const timer = setInterval(() => {
       p += 0.035
       if (p >= 0.9) {
         p = 0.9
-        const t = progressTimersRef.current.get(key)
+        const t = progressTimers.get(key)
         if (t) {
           clearInterval(t)
-          progressTimersRef.current.delete(key)
+          progressTimers.delete(key)
         }
       }
       updatePlan(sessionId, msgId, (plan) => ({
@@ -101,15 +79,15 @@ export function ChatWorkspace() {
         progress: { ...plan.progress, understanding: p },
       }))
     }, 350)
-    progressTimersRef.current.set(key, timer)
+    progressTimers.set(key, timer)
   }
 
   function finishUnderstandingProgress(sessionId: string, msgId: string) {
     const key = `${sessionId}-${msgId}`
-    const t = progressTimersRef.current.get(key)
+    const t = progressTimers.get(key)
     if (t) {
       clearInterval(t)
-      progressTimersRef.current.delete(key)
+      progressTimers.delete(key)
     }
     updatePlan(sessionId, msgId, (plan) => ({
       ...plan,

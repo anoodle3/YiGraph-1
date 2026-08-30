@@ -101,8 +101,11 @@ export function connectChatSocket(url: string): void {
     path: "/socket.io",
     transports: ["websocket", "polling"],
     reconnection: true,
-    reconnectionAttempts: 5,
+    // 永不放弃重连：后端重启（引擎初始化可达数十秒）后自动恢复；
+    // 重试间隔 1s 起指数退避，上限 5s
+    reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
     timeout: 30000,
   })
 

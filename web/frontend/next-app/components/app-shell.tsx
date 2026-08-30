@@ -20,6 +20,7 @@ import { DatasetsProvider } from "@/core/datasets-store"
 import { ModelsProvider } from "@/core/models-store"
 import { I18nProvider, useI18n } from "@/core/i18n/i18n-provider"
 import { BackendOverlay } from "@/components/backend-overlay"
+import { ensureChatConnection } from "@/core/chat-connection"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -47,6 +48,11 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     if (dark) root.classList.add("dark")
     else root.classList.remove("dark")
   }, [dark])
+
+  // 全局聊天连接：应用启动即建立，与页面切换解耦（切页不断线）
+  React.useEffect(() => {
+    ensureChatConnection()
+  }, [])
 
   // 动态设置浏览器标签标题 & html lang
   React.useEffect(() => {

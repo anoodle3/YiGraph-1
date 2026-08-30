@@ -73,9 +73,7 @@ export function ThinkingSteps({ plan }: { plan: WorkflowPlan }) {
               progress={progress.understanding}
             >
               <p className="text-sm leading-relaxed text-foreground/90">
-                {progress.understanding > 0
-                  ? streamText(plan.understanding, progress.understanding)
-                  : t("dag.parsingIntent", "正在解析意图…")}
+                {plan.understanding || t("dag.parsingIntent", "正在解析意图…")}
               </p>
             </StepRow>
 
@@ -241,9 +239,4 @@ function StepRow({
       </div>
     </div>
   )
-}
-
-function streamText(text: string, progress: number) {
-  const count = Math.max(1, Math.floor(text.length * progress))
-  return text.slice(0, count)
 }

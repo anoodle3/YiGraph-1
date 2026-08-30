@@ -33,10 +33,16 @@ export function AnalysisReport({
   const { t } = useI18n()
   const [feedback, setFeedback] = React.useState<"like" | "dislike" | null>(null)
 
+  const disclaimer = t(
+    "dag.disclaimer",
+    "本报告由 YiGraph 智能分析系统自动生成，仅供初步核查参考，不构成最终结论。",
+  )
+
   const html = React.useMemo(() => {
     if (!markdown) return ""
-    return marked.parse(markdown) as string
-  }, [markdown])
+    return marked.parse(appendDisclaimer(markdown, disclaimer)) as string
+    // disclaimer 的取值跟随当前界面语言；语言切换后此处随依赖变化重新解析
+  }, [markdown, disclaimer])
 
   const handleFeedback = (type: "like" | "dislike") => {
     if (feedback) return
@@ -107,7 +113,7 @@ export function AnalysisReport({
       {markdown ? (
         <div className="px-5 py-5">
           <div
-            className="prose prose-sm max-w-none dark:prose-invert text-sm leading-relaxed text-foreground/90"
+            className="prose prose-sm max-w-none dark:prose-invert"
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </div>
@@ -185,6 +191,13 @@ export function AnalysisReport({
               ))}
             </ol>
           </section>
+
+          {/* 免责声明（结构化报告分支） */}
+          <div className="border-t border-border pt-4">
+            <p className="text-xs italic leading-relaxed text-muted-foreground">
+              {disclaimer}
+            </p>
+          </div>
         </div>
       ) : null}
     </Card>
@@ -201,4 +214,17 @@ function TrendIcon({ trend }: { trend?: "up" | "down" | "flat" }) {
         ? "text-destructive"
         : "text-muted-foreground"
   return <Icon className={cn("size-4", color)} />
+}
+
+/**
+ * 报告末尾追加免责声明（渲染时跟随当前界面语言）。
+ * 若报告结尾已包含类似声明（如后端自行生成），则不重复追加。
+ */
+function appendDisclaimer(markdown: string, disclaimer: string): string {
+  const body = markdown.trimEnd()
+  const tail = body.slice(-400)
+  if (/仅供.{0,12}参考|does not constitute|preliminary review reference/i.test(tail)) {
+    return markdown
+  }
+  return `${body}\n\n---\n\n*${disclaimer}*\n`
 }

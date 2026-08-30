@@ -114,6 +114,7 @@
     "executing": "执行中", "executed": "执行完成",
     "executedDesc": "工作流执行完成 · 自动生成",
     "exportReport": "导出报告",
+    "disclaimer": "本报告由 YiGraph 智能分析系统自动生成，仅供初步核查参考，不构成最终结论。",
     "summary": "结论概要", "metrics": "关键指标", "findings": "主要发现", "recommendations": "后续建议",
     "preprocess": "预处理", "aggregate": "汇总", "subtask": "子任务",
     "buildGraph": "图构建 & 数据标准化", "synthesize": "多维度结果综合", "noAlgoTask": "—",

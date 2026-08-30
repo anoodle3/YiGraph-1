@@ -138,7 +138,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           </Button>
 
           <a
-            href="https://github.com"
+            href="https://github.com/iDC-NEU/YiGraph"
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

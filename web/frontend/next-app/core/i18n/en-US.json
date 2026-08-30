@@ -118,6 +118,7 @@
     "executing": "Executing", "executed": "Complete",
     "executedDesc": "Workflow completed · Auto-generated",
     "exportReport": "Export Report",
+    "disclaimer": "This report is provided by the YiGraph intelligent analysis system for preliminary review reference only and does not constitute a final conclusion.",
     "summary": "Summary", "metrics": "Key Metrics", "findings": "Findings", "recommendations": "Recommendations",
     "preprocess": "Preprocess", "aggregate": "Aggregate", "subtask": "Subtask",
     "buildGraph": "Graph Build & Data Normalization", "synthesize": "Multi-Dimensional Synthesis", "noAlgoTask": "—",

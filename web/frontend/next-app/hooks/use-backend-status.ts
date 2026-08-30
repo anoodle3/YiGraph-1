@@ -4,7 +4,7 @@ import * as React from "react"
 import { probeBackend } from "@/core/api/base"
 
 const OFFLINE_POLL_MS = 2000
-const ONLINE_POLL_MS = 5000
+const ONLINE_POLL_MS = 10000
 /** 在线后连续失败多少次才判定离线，避免网络抖动导致遮罩闪烁 */
 const FAILURE_THRESHOLD = 2
 
@@ -34,7 +34,8 @@ export function useBackendStatus() {
       if (cancelled) return
 
       const s = stateRef.current
-      if (url) {
+      // 注意：同源模式下 probeBackend 返回空串（有效 base），必须用 null 判断
+      if (url !== null) {
         s.status = "online"
         s.failures = 0
         s.everOnline = true
@@ -53,7 +54,7 @@ export function useBackendStatus() {
 
       timer = setTimeout(
         poll,
-        url ? ONLINE_POLL_MS : OFFLINE_POLL_MS,
+        url !== null ? ONLINE_POLL_MS : OFFLINE_POLL_MS,
       )
     }
 

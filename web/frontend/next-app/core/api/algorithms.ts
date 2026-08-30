@@ -18,7 +18,7 @@ export async function fetchAlgorithms(params: {
 }): Promise<{ data: Algorithm[]; total: number }> {
   const { search = "", category = "", lang = "zh-CN" } = params
 
-  const url = new URL(`${await getBaseUrl()}/api/algorithms`)
+  const url = new URL(`${await getBaseUrl()}/api/algorithms`, window.location.origin)
   if (search) url.searchParams.set("search", search)
   if (category) url.searchParams.set("category", category)
   url.searchParams.set("lang", lang)
@@ -36,7 +36,7 @@ export async function fetchAlgorithms(params: {
 export async function fetchCategories(params?: { lang?: Lang }): Promise<CategoryInfo[]> {
   const lang = params?.lang ?? "zh-CN"
 
-  const url = new URL(`${await getBaseUrl()}/api/algorithms/categories`)
+  const url = new URL(`${await getBaseUrl()}/api/algorithms/categories`, window.location.origin)
   url.searchParams.set("lang", lang)
 
   const res = await fetch(url.toString())
@@ -79,7 +79,7 @@ export async function getAlgorithmById(
   lang?: Lang,
 ): Promise<Algorithm | undefined> {
   const base = await getBaseUrl()
-  const url = new URL(`${base}/api/algorithms/${encodeURIComponent(id)}`)
+  const url = new URL(`${base}/api/algorithms/${encodeURIComponent(id)}`, window.location.origin)
   url.searchParams.set("lang", lang ?? "zh-CN")
 
   const res = await fetch(url.toString())

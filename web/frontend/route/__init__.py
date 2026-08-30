@@ -3,7 +3,7 @@ import os
 import atexit
 import sys
 
-from flask import Flask, redirect
+from flask import Flask, redirect, send_from_directory, abort
 from flask_cors import CORS
 from flask_socketio import SocketIO 
 
@@ -28,6 +28,16 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+
+class HealthCheckFilter(logging.Filter):
+    """探活轮询（前端每几秒一次 GET /api/health）无诊断价值，从访问日志中过滤。"""
+
+    def filter(self, record):
+        return "/api/health" not in record.getMessage()
+
+
+logging.getLogger("werkzeug").addFilter(HealthCheckFilter())
+
 socketio = SocketIO(cors_allowed_origins="*")
 
 
@@ -39,9 +49,36 @@ def create_app():
 
     CORS(app)
 
-    @app.route('/')
-    def index():
-        return redirect('http://localhost:3000')
+    # ====== 静态托管 Next.js 导出产物（单端口形态，out/ 存在时启用） ======
+    next_out_dir = os.path.abspath(os.path.join(base_dir, '..', 'next-app', 'out'))
+    has_frontend_export = os.path.isfile(os.path.join(next_out_dir, 'index.html'))
+
+    if has_frontend_export:
+        logger.info("Serving frontend static export from %s", next_out_dir)
+
+        @app.route('/')
+        def frontend_index():
+            return send_from_directory(next_out_dir, 'index.html')
+
+        @app.route('/<path:path>')
+        def frontend_static(path):
+            # 未知后端路径（API / SocketIO）不应回退到前端页面
+            if path.startswith('api/') or path.startswith('socket.io'):
+                abort(404)
+            full = os.path.join(next_out_dir, path)
+            if os.path.isfile(full):
+                return send_from_directory(next_out_dir, path)
+            if os.path.isfile(full + '.html'):
+                return send_from_directory(next_out_dir, path + '.html')
+            index_in_dir = os.path.join(full, 'index.html')
+            if os.path.isfile(index_in_dir):
+                return send_from_directory(os.path.dirname(index_in_dir), 'index.html')
+            # SPA fallback：未命中文件的前端路由回退到 index.html
+            return send_from_directory(next_out_dir, 'index.html')
+    else:
+        @app.route('/')
+        def index():
+            return redirect('http://localhost:3000')
 
     # ====== Register blueprints (route modules) ======
     from .routes_health import bp as health_bp

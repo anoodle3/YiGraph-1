@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { FilesManager } from "@/components/files/files-manager"
 
 export const metadata = {
@@ -6,5 +7,9 @@ export const metadata = {
 }
 
 export default function FilesPage() {
-  return <FilesManager />
+  return (
+    <Suspense>
+      <FilesManager />
+    </Suspense>
+  )
 }

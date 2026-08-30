@@ -14,6 +14,11 @@ let scanCursor = 1
 let consecutiveFailures = 0
 let backendLive = false
 let liveWaiters: Array<() => void> = []
+/**
+ * 同源模式：页面由后端托管（单端口形态），一切请求走相对路径。
+ * 置位后 getBaseUrl 恒返回 ""，端口扫描不再执行。
+ */
+let sameOriginVerified = false
 
 async function probePort(port: number, timeoutMs = 500): Promise<boolean> {
   try {
@@ -24,6 +29,23 @@ async function probePort(port: number, timeoutMs = 500): Promise<boolean> {
     })
     clearTimeout(timeout)
     return true
+  } catch {
+    return false
+  }
+}
+
+/** 探测同源后端：页面由后端托管（单端口形态）时 /api/health 同源可达。 */
+async function probeSameOrigin(timeoutMs = 600): Promise<boolean> {
+  if (typeof window === "undefined") return false
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+    const res = await fetch(PROBE_PATH, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+    clearTimeout(timeout)
+    return res.ok
   } catch {
     return false
   }
@@ -79,10 +101,17 @@ function cacheBaseUrl(port: number): string {
 }
 
 export async function getBaseUrl(): Promise<string> {
-  if (cachedBaseUrl && backendLive) return cachedBaseUrl
+  if (sameOriginVerified) return ""
   if (!pendingPromise) {
     pendingPromise = (async () => {
-      // 先尝试一次立即解析（sessionStorage 快路径 / 端口扫描）
+      // 单端口形态：页面由后端托管，同源直连，无需端口扫描
+      if (await probeSameOrigin()) {
+        sameOriginVerified = true
+        cachedBaseUrl = ""
+        setBackendLive(true)
+        return ""
+      }
+      // 双端口形态（dev）：同源探测失败（:3000 上没有 /api/health）→ 端口扫描定位后端
       const url = await findBaseUrl()
       if (url) {
         setBackendLive(true)
@@ -103,14 +132,23 @@ export async function getBaseUrl(): Promise<string> {
 }
 
 /**
- * 探测后端是否可达。可达时返回其 base URL 并更新缓存，否则返回 null。
- * 由启动遮罩轮询使用。
- * 先探测最可能的端口（上次使用的端口 / 起始端口）；
- * 失败时首次探测全量扫描（页面加载时尽快定位后端），
- * 之后分批轮扫剩余端口，摊平请求量，后端漂移到任意端口约 10s 内可被发现。
+ * 探测后端是否可达。可达时返回其 base URL（同源模式为 ""）并更新缓存，
+ * 否则返回 null。由启动遮罩轮询使用。
+ * 探测顺序：同源 /api/health → 上次使用的端口 / 起始端口 → 分批轮扫。
  */
 export async function probeBackend(timeoutMs = 400): Promise<string | null> {
   probeCount += 1
+
+  // 同源优先：单端口形态下页面与后端同源，无需扫描
+  if (await probeSameOrigin(timeoutMs)) {
+    if (!sameOriginVerified) {
+      sameOriginVerified = true
+      cachedBaseUrl = ""
+    }
+    consecutiveFailures = 0
+    setBackendLive(true)
+    return ""
+  }
 
   let found: number | null = null
   try {

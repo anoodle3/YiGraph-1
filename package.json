@@ -4,6 +4,8 @@
   "scripts": {
     "dev": "npm run dev --prefix web/frontend/next-app",
     "dev:all": "concurrently \"npm run dev\" \"python web/frontend/run.py\"",
+    "build": "npm run build --prefix web/frontend/next-app",
+    "serve": "python web/frontend/run.py",
     "install:fe": "npm install --prefix web/frontend/next-app",
     "postinstall": "npm install --prefix web/frontend/next-app"
   },

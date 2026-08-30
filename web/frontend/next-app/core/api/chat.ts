@@ -96,7 +96,8 @@ export function connectChatSocket(url: string): void {
   disconnectChatSocket()
 
   serverUrl = url
-  socket = io(url, {
+  // url 为空串表示同源模式（单端口形态）：io(undefined) 连接当前页面所在源
+  socket = io(url || undefined, {
     path: "/socket.io",
     transports: ["websocket", "polling"],
     reconnection: true,

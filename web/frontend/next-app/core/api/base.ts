@@ -196,3 +196,8 @@ export async function probeBackend(timeoutMs = 400): Promise<string | null> {
 export function getBaseUrlSync(): string {
   return cachedBaseUrl ?? FALLBACK_URL
 }
+
+/** 后端当前是否在线（由 getBaseUrl / probeBackend 探测维护） */
+export function isBackendLive(): boolean {
+  return backendLive
+}

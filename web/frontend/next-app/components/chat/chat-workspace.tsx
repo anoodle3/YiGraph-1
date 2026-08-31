@@ -8,8 +8,9 @@ import { useModels } from "@/core/models-store"
 import { ChatHistory } from "./chat-history"
 import { ChatMain } from "./chat-main"
 import { planWorkflow, simulateNodeResult, generateReport, reportToMarkdown } from "@/core/dag-planner"
-import type { ChatMessage, SubProblem, WorkflowPlan } from "@/core/types"
+import type { Algorithm, ChatMessage, SubProblem, WorkflowPlan } from "@/core/types"
 import type { ChatSettings } from "./chat-input"
+import type { NodeExecutionContent } from "@/core/api/chat"
 import { isChatConnected, matchAlgorithm, sendChatRequest } from "@/core/api/chat"
 import {
   createAdapterState,
@@ -42,6 +43,9 @@ export function ChatWorkspace() {
     expertMode: false,
     interactiveMode: false,
   })
+
+  /** 每个助手消息的后端 step_id → 前端节点 id 映射（dag 事件建立，执行事件消费） */
+  const idMapsRef = React.useRef(new Map<string, Map<string, string>>())
 
   // Auto-select first model / dataset
   React.useEffect(() => {
@@ -201,6 +205,7 @@ export function ChatWorkspace() {
                 algorithms,
                 adapter.stepAlgorithms,
               )
+              idMapsRef.current.set(assistantMsgId, planData.idMap)
 
               // dag-ready：拆解/选算法过程已由上面的真实事件流驱动
               savedNodes = planData.nodes
@@ -213,6 +218,18 @@ export function ChatWorkspace() {
                 edges: planData.edges,
                 progress: { understanding: 1, decomposing: 1, selecting: 1 },
               }))
+              break
+            }
+
+            case "node_update": {
+              applyNodeUpdateEvent(
+                updatePlan,
+                sessionId,
+                assistantMsgId,
+                idMapsRef.current.get(assistantMsgId),
+                result.content,
+                getById,
+              )
               break
             }
 
@@ -231,35 +248,15 @@ export function ChatWorkspace() {
                 !settings.interactiveMode &&
                 !settings.expertMode
               ) {
-                // auto 模式且后端已返回文本：模拟逐节点执行
-                const nodes = savedNodes
-
-                updatePlan(sessionId, assistantMsgId, (p) => ({
-                  ...p,
-                  phase: "executing" as const,
-                }))
-
-                for (const node of nodes) {
-                  updatePlan(sessionId, assistantMsgId, (p) => ({
-                    ...p,
-                    nodes: p.nodes.map((n) =>
-                      n.id === node.id
-                        ? { ...n, status: "running" as const }
-                        : n,
-                    ),
-                  }))
-                  await sleep(700)
-                  const algo = getById(node.algorithmId)
-                  const nodeResult = simulateNodeResult(node, algo)
-                  updatePlan(sessionId, assistantMsgId, (p) => ({
-                    ...p,
-                    nodes: p.nodes.map((n) =>
-                      n.id === node.id
-                        ? { ...n, status: "done" as const, result: nodeResult }
-                        : n,
-                    ),
-                  }))
-                  await sleep(200)
+                // auto 模式且后端未下发节点事件：临时回退到客户端模拟
+                if (!adapter.nodeEventsSeen) {
+                  await simulateExecution({
+                    sessionId,
+                    messageId: assistantMsgId,
+                    nodes: savedNodes,
+                    getById,
+                    updatePlan,
+                  })
                 }
 
                 updatePlan(sessionId, assistantMsgId, (p) => ({
@@ -299,11 +296,8 @@ export function ChatWorkspace() {
       // 保存节点列表供闭包内使用（不依赖后续 sessions 状态）
       const execNodes = plan.nodes
 
-      // interact / expert 模式 + WebSocket 已连接 → 发给后端执行
-      if (
-        isChatConnected() &&
-        (settings.interactiveMode || settings.expertMode)
-      ) {
+      // 交互模式（提交时记录在 plan 上）且后端在线 → 发给后端执行
+      if (isChatConnected() && plan.interactive) {
         const model = models.find((m) => m.id === settings.model)
         const dataset = datasets.find((d) => d.id === settings.dataset)
         const adapter = createAdapterState()
@@ -347,33 +341,28 @@ export function ChatWorkspace() {
               return
             }
 
-            if (result.kind === "stream_end") {
-              updatePlan(activeId, messageId, (p) => ({
-                ...p,
-                phase: "executing" as const,
-              }))
+            if (result.kind === "node_update") {
+              applyNodeUpdateEvent(
+                updatePlan,
+                activeId,
+                messageId,
+                idMapsRef.current.get(messageId),
+                result.content,
+                getById,
+              )
+              return
+            }
 
-              for (const node of execNodes) {
-                updatePlan(activeId, messageId, (p) => ({
-                  ...p,
-                  nodes: p.nodes.map((n) =>
-                    n.id === node.id
-                      ? { ...n, status: "running" as const }
-                      : n,
-                  ),
-                }))
-                await sleep(700)
-                const algo = getById(node.algorithmId)
-                const nodeResult = simulateNodeResult(node, algo)
-                updatePlan(activeId, messageId, (p) => ({
-                  ...p,
-                  nodes: p.nodes.map((n) =>
-                    n.id === node.id
-                      ? { ...n, status: "done" as const, result: nodeResult }
-                      : n,
-                  ),
-                }))
-                await sleep(200)
+            if (result.kind === "stream_end") {
+              // 后端未下发节点事件：临时回退到客户端模拟
+              if (!adapter.nodeEventsSeen) {
+                await simulateExecution({
+                  sessionId: activeId,
+                  messageId,
+                  nodes: execNodes,
+                  getById,
+                  updatePlan,
+                })
               }
 
               updatePlan(activeId, messageId, (p) => ({
@@ -396,32 +385,14 @@ export function ChatWorkspace() {
 
       // WebSocket 未连接或非 interact 模式 → 客户端模拟
       const runMock = async () => {
-        updatePlan(activeId, messageId, (p) => ({
-          ...p,
-          phase: "executing" as const,
-        }))
-        for (const node of execNodes) {
-          updatePlan(activeId, messageId, (p) => ({
-            ...p,
-            nodes: p.nodes.map((n) =>
-              n.id === node.id
-                ? { ...n, status: "running" as const }
-                : n,
-            ),
-          }))
-          await sleep(900)
-          const algo = getById(node.algorithmId)
-          const result = simulateNodeResult(node, algo)
-          updatePlan(activeId, messageId, (p) => ({
-            ...p,
-            nodes: p.nodes.map((n) =>
-              n.id === node.id
-                ? { ...n, status: "done" as const, result }
-                : n,
-            ),
-          }))
-          await sleep(220)
-        }
+        await simulateExecution({
+          sessionId: activeId,
+          messageId,
+          nodes: execNodes,
+          getById,
+          updatePlan,
+          pacing: { runningMs: 900, doneMs: 220 },
+        })
         const report = generateReport(
           { ...plan, phase: "executed" },
           algorithms,
@@ -458,6 +429,7 @@ export function ChatWorkspace() {
         edges: [],
         phase: "understanding",
         progress: { understanding: 0, decomposing: 0, selecting: 0 },
+        interactive: true,
       }
 
       const assistantMsgId = `m-${Date.now()}-a`
@@ -574,6 +546,7 @@ export function ChatWorkspace() {
                   algorithms,
                   adapter.stepAlgorithms,
                 )
+                idMapsRef.current.set(assistantMsgId, planData.idMap)
 
                 // dag-ready：拆解/选算法过程已由上面的真实事件流驱动
                 savedNodes = planData.nodes
@@ -679,6 +652,8 @@ export function ChatWorkspace() {
       appendMessage(sessionId, userMsg)
 
       // 初始的空 plan（phase: understanding, progress 全 0）
+      // interactive 记录提交时刻的模式：切页重挂载后 settings 会重置，
+      // 按钮显示与执行决策以这里为准
       const plan: WorkflowPlan = {
         understanding: "",
         subProblems: [],
@@ -686,6 +661,7 @@ export function ChatWorkspace() {
         edges: [],
         phase: "understanding",
         progress: { understanding: 0, decomposing: 0, selecting: 0 },
+        interactive: settings.interactiveMode || settings.expertMode,
       }
 
       const assistantMsgId = `m-${Date.now()}-a`
@@ -723,31 +699,13 @@ export function ChatWorkspace() {
           }))
         } else {
           // 普通模式：自动执行
-          const nodes = planDraft.nodes
-          updatePlan(sessionId, assistantMsgId, (p) => ({
-            ...p,
-            phase: "executing" as const,
-          }))
-          for (const node of nodes) {
-            updatePlan(sessionId, assistantMsgId, (p) => ({
-              ...p,
-              nodes: p.nodes.map((n) =>
-                n.id === node.id ? { ...n, status: "running" as const } : n,
-              ),
-            }))
-            await sleep(700)
-            const algo = getById(node.algorithmId)
-            const result = simulateNodeResult(node, algo)
-            updatePlan(sessionId, assistantMsgId, (p) => ({
-              ...p,
-              nodes: p.nodes.map((n) =>
-                n.id === node.id
-                  ? { ...n, status: "done" as const, result }
-                  : n,
-              ),
-            }))
-            await sleep(200)
-          }
+          await simulateExecution({
+            sessionId,
+            messageId: assistantMsgId,
+            nodes: planDraft.nodes,
+            getById,
+            updatePlan,
+          })
           const report = generateReport(
             { ...planDraft, phase: "executed" } as WorkflowPlan,
             algorithms,
@@ -794,6 +752,145 @@ export function ChatWorkspace() {
       />
     </div>
   )
+}
+
+/**
+ * 逐节点推进的客户端模拟执行（后端未下发节点事件时的临时回退）。
+ * 后端节点事件链路稳定后应整体移除。
+ */
+async function simulateExecution({
+  sessionId,
+  messageId,
+  nodes,
+  getById,
+  updatePlan,
+  pacing = { runningMs: 700, doneMs: 200 },
+}: {
+  sessionId: string
+  messageId: string
+  nodes: WorkflowPlan["nodes"]
+  getById: (id: string) => Algorithm | undefined
+  updatePlan: ReturnType<typeof useChat>["updatePlan"]
+  pacing?: { runningMs: number; doneMs: number }
+}) {
+  updatePlan(sessionId, messageId, (p) => ({
+    ...p,
+    phase: "executing" as const,
+  }))
+  for (const node of nodes) {
+    const startedAtMs = Date.now()
+    updatePlan(sessionId, messageId, (p) => ({
+      ...p,
+      nodes: p.nodes.map((n) =>
+        n.id === node.id
+          ? { ...n, status: "running" as const, startedAtMs }
+          : n,
+      ),
+    }))
+    await sleep(pacing.runningMs)
+    const algo = getById(node.algorithmId)
+    const result = simulateNodeResult(node, algo)
+    updatePlan(sessionId, messageId, (p) => ({
+      ...p,
+      nodes: p.nodes.map((n) =>
+        n.id === node.id
+          ? {
+              ...n,
+              status: "done" as const,
+              result,
+              finishedAtMs: Date.now(),
+            }
+          : n,
+      ),
+    }))
+    await sleep(pacing.doneMs)
+  }
+}
+
+/** 把一条真实节点执行事件应用到对应节点（经 dag 事件的 idMap 定位） */
+function applyNodeUpdateEvent(
+  updatePlan: ReturnType<typeof useChat>["updatePlan"],
+  sessionId: string,
+  messageId: string,
+  idMap: Map<string, string> | undefined,
+  content: NodeExecutionContent,
+  getById: (id: string) => Algorithm | undefined,
+) {
+  updatePlan(sessionId, messageId, (p) => {
+    const nodeId = resolveNodeId(idMap, content, p.nodes)
+    if (!nodeId) return p
+    return {
+      ...p,
+      phase:
+        p.phase === "dag-ready" || p.phase === "executing"
+          ? "executing"
+          : p.phase,
+      nodes: p.nodes.map((n) => {
+        if (n.id !== nodeId) return n
+        if (content.status === "running") {
+          return {
+            ...n,
+            status: "running" as const,
+            error: undefined,
+            startedAtMs: n.startedAtMs ?? Date.now(),
+          }
+        }
+        if (content.status === "failed") {
+          return {
+            ...n,
+            status: "error" as const,
+            error: content.error,
+            finishedAtMs: Date.now(),
+          }
+        }
+        // success：携带后端下发的结构化输出
+        const algo = getById(n.algorithmId)
+        return {
+          ...n,
+          status: "done" as const,
+          error: undefined,
+          finishedAtMs: Date.now(),
+          result: {
+            summary: algo
+              ? `完成 ${algo.displayName}（${algo.name}）计算`
+              : content.question
+                ? `完成子任务「${content.question}」的执行`
+                : "子任务执行完成",
+            outputs: (content.outputs ?? []).map((o) => ({
+              id: o.output_id,
+              source: o.source,
+              kind: o.task_type,
+              description: o.description,
+              fields: o.fields,
+              value: o.value,
+              truncated: o.truncated,
+              total: o.total,
+              path: o.path,
+            })),
+          },
+        }
+      }),
+    }
+  })
+}
+
+/**
+ * 事件 step_id → 前端节点 id。
+ * 优先 idMap；查不到（如被跳过的根节点）用 question 文本匹配 label；
+ * 仍找不到返回 null（忽略该事件，避免误标到别的节点）。
+ */
+function resolveNodeId(
+  idMap: Map<string, string> | undefined,
+  content: NodeExecutionContent,
+  nodes: WorkflowPlan["nodes"],
+): string | null {
+  const mapped = idMap?.get(String(content.step_id))
+  if (mapped) return mapped
+  if (content.question) {
+    const byLabel = nodes.find((n) => n.label === content.question)
+    if (byLabel) return byLabel.id
+  }
+  return idMap ? null : `n-${content.step_id}`
 }
 
 async function animatePhase(

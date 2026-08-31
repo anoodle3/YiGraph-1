@@ -5,7 +5,6 @@ import sys
 
 from flask import Flask, redirect, send_from_directory, abort
 from flask_cors import CORS
-from flask_socketio import SocketIO 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 if PROJECT_ROOT not in sys.path:
@@ -38,8 +37,6 @@ class HealthCheckFilter(logging.Filter):
 
 logging.getLogger("werkzeug").addFilter(HealthCheckFilter())
 
-socketio = SocketIO(cors_allowed_origins="*")
-
 
 def create_app():
     # Current file directory
@@ -62,8 +59,8 @@ def create_app():
 
         @app.route('/<path:path>')
         def frontend_static(path):
-            # 未知后端路径（API / SocketIO）不应回退到前端页面
-            if path.startswith('api/') or path.startswith('socket.io'):
+            # 未知后端路径（API）不应回退到前端页面
+            if path.startswith('api/'):
                 abort(404)
             full = os.path.join(next_out_dir, path)
             if os.path.isfile(full):
@@ -87,6 +84,7 @@ def create_app():
     from .routes_models import bp as models_bp
     from .routes_knowledge_base import bp as knowledge_base_bp
     from .routes_feedback import bp as feedback_bp
+    from .routes_chat_stream import bp as chat_stream_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(documents_bp)
@@ -94,22 +92,10 @@ def create_app():
     app.register_blueprint(models_bp)
     app.register_blueprint(knowledge_base_bp)
     app.register_blueprint(feedback_bp)
+    app.register_blueprint(chat_stream_bp)
 
-    # ====== Initialize SocketIO and async runtime ======
-    socketio.init_app(app)
+    # ====== Initialize async runtime ======
     start_async_runtime()
     atexit.register(stop_async_runtime)
-
-    # Warm up algorithm caches on startup so the first request is fast
-    # from aag.knowledge_base.knowledge_base_management.basic import _get_formatted_algorithms, DEFAULT_LANG
-    # _get_formatted_algorithms(DEFAULT_LANG)
-    # logger.info("Algorithm cache warmed up")
- 
-    # ====== Register WebSocket event handlers ======
-    try:
-        from . import sockets_chat  
-        logger.info("WebSocket event module sockets_chat loaded")
-    except ImportError as e:
-        logger.warning(f"Failed to import sockets_chat: {e}")
 
     return app

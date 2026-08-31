@@ -31,7 +31,6 @@ export function ChatMain({
   const { t } = useI18n()
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const endRef = React.useRef<HTMLDivElement>(null)
-  const interactive = settings.interactiveMode || settings.expertMode
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
@@ -81,7 +80,7 @@ export function ChatMain({
                   }
                   onExecute={() => onExecute(m.id)}
                   onModify={(text) => onModify(m.id, text)}
-                  interactive={interactive}
+                  interactive={m.plan?.interactive ?? false}
                 />
               ),
             )}

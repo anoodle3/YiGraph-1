@@ -366,7 +366,11 @@ class Scheduler:
         self.dag.refresh_data_dependency(self.reasoner)
         self.dag.print_data_dependency()
         print("✅ DAG build and algorithm selection done; starting computation")
-        
+
+        # Route node execution events (on_step_start/on_step_end) through the
+        # streaming callback. None clears stale hooks from a previous request.
+        self.on_step_start = self.on_step_end = callback
+
         analysis_result = await self._run_algorithm_pipeline2()
         
         if callback and mode == "normal":
@@ -1214,6 +1218,12 @@ class Scheduler:
         return analysis_result
     
 
+    def _fail_step(self, step_id: int, error_msg: str) -> None:
+        """Mark the step as failed and notify the on_step_end hook (if registered)."""
+        self.dag.set_failed(step_id, error_msg)
+        if self.on_step_end:
+            self.on_step_end(self.dag.steps[step_id])
+
     async def _run_algorithm_pipeline2(self, global_round: int = 0):
         max_global_rounds = 3
         analysis_blocks: Dict[str, Dict[str, Any]] = {}
@@ -1222,9 +1232,13 @@ class Scheduler:
 
         for step_id in self.dag.topological_order():
             step = self.dag.steps[step_id]
+            self.dag.set_running(step_id)
+            if self.on_step_start:
+                self.on_step_start(step)
+
             tool_description = None
             tool_metadata = None
-            tool_result = None 
+            tool_result = None
 
             data_dependency_parents = [self.dag.steps[pid] for pid in self.dag.parents_of(step_id)]
             data_dependency_context = {
@@ -1250,7 +1264,7 @@ class Scheduler:
 
             if step.task_type == GraphAnalysisType.GRAPH_ALGORITHM:
                 if not step.graph_algorithm:
-                    self.dag.set_failed(step_id, "No graph algorithm selected for this step")
+                    self._fail_step(step_id, "No graph algorithm selected for this step")
                     logger.error(f"❌ Step {step_id} missing graph_algorithm, skipping")
                     continue
 
@@ -1261,7 +1275,7 @@ class Scheduler:
                 if tool_metadata is None:
                     error_msg = f"Cannot get algorithm description for '{step.graph_algorithm}'"
                     logger.error(f"❌ {error_msg}")
-                    self.dag.set_failed(step_id, error_msg)
+                    self._fail_step(step_id, error_msg)
                     continue
                 
                 logger.info(f"tool_description:{tool_description}")
@@ -1272,7 +1286,7 @@ class Scheduler:
                         graph_adapter_result=data_dependency_context.get("graph_input_adapter_result"),
                     )
                 except Exception as graph_err:
-                    self.dag.set_failed(step_id, f"Failed to initialize working graph: {graph_err}")
+                    self._fail_step(step_id, f"Failed to initialize working graph: {graph_err}")
                     logger.error(f"❌ Step {step_id} graph init failed: {graph_err}, skipping")
                     continue
 
@@ -1382,7 +1396,7 @@ class Scheduler:
                         location=f"step_{step_id}"
                     )
                 except Exception as e:
-                    self.dag.set_failed(step_id, str(e))
+                    self._fail_step(step_id, str(e))
                     logger.error(f"❌ Step {step_id} algorithm execution failed: {e}, skipping")
                     continue
 
@@ -1395,6 +1409,8 @@ class Scheduler:
                 logger.info(f"✅ Tool execution: {tool_result.get('summary','done')}")
 
                 self.dag.set_success(step_id)
+                if self.on_step_end:
+                    self.on_step_end(step)
 
             elif step.task_type == GraphAnalysisType.NUMERIC_ANALYSIS:
                 logger.info("🧮 Task type: Numeric Analysis")
@@ -1404,7 +1420,7 @@ class Scheduler:
                 if data_dependency_parents and not graph_deps and not param_deps:
                     dep_empty_reason = "Dependency resolution returned empty graph/parameter dependencies"
                     logger.error(f"❌ Step {step_id} numeric analysis: {dep_empty_reason}")
-                    self.dag.set_failed(step_id, dep_empty_reason)
+                    self._fail_step(step_id, dep_empty_reason)
                     if self.error_recovery and global_round < max_global_rounds:
                         self.error_recovery.global_recover(
                             self.dag,
@@ -1483,7 +1499,7 @@ class Scheduler:
                         location=f"step_{step_id}"
                     )
                 except Exception as e:
-                    self.dag.set_failed(step_id, str(e))
+                    self._fail_step(step_id, str(e))
                     logger.error(f"❌ Step {step_id} numeric analysis failed: {e}, skipping")
                     if self.error_recovery and global_round < max_global_rounds:
                         self.error_recovery.global_recover(
@@ -1535,6 +1551,8 @@ class Scheduler:
                 
                 logger.info("✅ Numeric analysis completed")
                 self.dag.set_success(step_id)
+                if self.on_step_end:
+                    self.on_step_end(step)
 
             elif step.task_type == GraphAnalysisType.GRAPH_QUERY:
                 logger.info("🔍 Task type: Graph Query")
@@ -1573,6 +1591,8 @@ class Scheduler:
                         )
                         logger.info(f"✅ Graph query done; returned {query_result.get('count', 0)} results")
                         self.dag.set_success(step_id)
+                        if self.on_step_end:
+                            self.on_step_end(step)
                         
                         tool_result = {
                             "success": True,
@@ -1582,13 +1602,13 @@ class Scheduler:
                     else:
                         error_msg = query_result.get("error", "Graph query failed")
                         logger.error(f"❌ Step {step_id} graph query failed: {error_msg}, skipping")
-                        self.dag.set_failed(step_id, error_msg)
+                        self._fail_step(step_id, error_msg)
                         continue
                         
                 except Exception as query_err:
                     error_msg = f"Graph query execution failed: {query_err}"
                     logger.error(error_msg, exc_info=True)
-                    self.dag.set_failed(step_id, error_msg)
+                    self._fail_step(step_id, error_msg)
                     continue
 
             if tool_result is not None:

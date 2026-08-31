@@ -12,7 +12,11 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from .engine_service import EngineService
-from aag.models.graph_workflow_dag import dag_info_to_frontend_format
+from aag.models.graph_workflow_dag import (
+    WorkflowStep,
+    dag_info_to_frontend_format,
+    workflow_step_to_frontend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -183,8 +187,10 @@ class ChatService:
             # 这里跟踪并避免 engine.run 返回后重复发送
             streamed_dag = {"value": False}
 
-            def wrapped_callback(data_chunk: Dict[str, Any]):
-                if data_chunk.get("contentType") == "dag":
+            def wrapped_callback(data_chunk):
+                if isinstance(data_chunk, WorkflowStep):
+                    data_chunk = workflow_step_to_frontend(data_chunk)
+                if isinstance(data_chunk, dict) and data_chunk.get("contentType") == "dag":
                     streamed_dag["value"] = True
                 callback(data_chunk)
 

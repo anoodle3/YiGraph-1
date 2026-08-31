@@ -20,7 +20,7 @@ os.chdir(_PROJECT_ROOT)
 # `from route import ...` continues to work regardless of CWD.
 
 import socket
-from route import create_app, socketio
+from route import create_app
 
 app = create_app()
 
@@ -41,10 +41,9 @@ if __name__ == "__main__":
     print(f"Using available port: {port}")
 
     print(f"Frontend: http://localhost:3000")
-    socketio.run(
-        app,
+    app.run(
         debug=False,
         host="0.0.0.0",
         port=port,
-        allow_unsafe_werkzeug=True,
+        threaded=True,
     )

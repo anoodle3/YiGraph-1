@@ -16,6 +16,7 @@ import type {
 
   AlgorithmSelectedContent,
   ChatResponse,
+  NodeExecutionContent,
   OldDag,
   OldDagEdge,
   OldDagNode,
@@ -65,6 +66,8 @@ export interface AdapterState {
   stepAlgorithms: Map<string, StepAlgorithm>
   /** 当前收集到的结果文本段落 */
   resultParagraphs: string[]
+  /** 本轮是否收到过真实节点执行事件 */
+  nodeEventsSeen: boolean
   /** 是否已经完成（收到 stream_end） */
   finished: boolean
   /** 错误信息 */
@@ -79,6 +82,7 @@ export function createAdapterState(): AdapterState {
     subqueries: [],
     stepAlgorithms: new Map(),
     resultParagraphs: [],
+    nodeEventsSeen: false,
     finished: false,
     error: null,
   }
@@ -144,6 +148,16 @@ export function processChatEvent(
           ({ step_id: -1, question: "", task_type: "" } as AlgorithmSelectedContent),
       }
     }
+    if (event.contentType === "node_status" || event.contentType === "node_result") {
+      state.nodeEventsSeen = true
+      return {
+        kind: "node_update",
+        content: (event.content ?? {
+          step_id: -1,
+          status: "failed",
+        }) as NodeExecutionContent,
+      }
+    }
     if (event.contentType === "text") {
       const text = String(event.content ?? "")
       state.resultParagraphs.push(text)
@@ -159,6 +173,7 @@ export type AdapterEvent =
   | { kind: "dag"; dag: OldDag }
   | { kind: "subproblems"; subqueries: OldSubquery[] }
   | { kind: "algorithm_selected"; selection: AlgorithmSelectedContent }
+  | { kind: "node_update"; content: NodeExecutionContent }
   | { kind: "result_text"; text: string }
   | { kind: "stream_end" }
   | { kind: "error"; message: string }
@@ -176,10 +191,14 @@ export function convertOldDagToPlan(
   understanding: string,
   algorithms: Algorithm[],
   stepAlgorithms?: Map<string, StepAlgorithm>,
-): Pick<
-  WorkflowPlan,
-  "understanding" | "subProblems" | "nodes" | "edges"
-> {
+): {
+  understanding: string
+  subProblems: SubProblem[]
+  nodes: DagNode[]
+  edges: DagEdge[]
+  /** 后端 step_id → 前端节点 id（n-{i}），用于把执行事件映射到节点 */
+  idMap: Map<string, string>
+} {
   const subProblems: SubProblem[] = []
   const nodes: DagNode[] = []
   const edges: DagEdge[] = []
@@ -265,5 +284,6 @@ export function convertOldDagToPlan(
     subProblems,
     nodes,
     edges,
+    idMap,
   }
 }

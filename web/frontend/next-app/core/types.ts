@@ -54,6 +54,11 @@ export interface DagNode {
   taskType?: string
   /** Simulated execution output */
   result?: NodeResult
+  /** 执行失败时的错误信息（真实后端执行时下发） */
+  error?: string
+  /** 节点开始/结束执行的时间戳（毫秒），用于展示耗时 */
+  startedAtMs?: number
+  finishedAtMs?: number
 }
 
 export type NodeStatus = "pending" | "running" | "done" | "error"
@@ -71,6 +76,28 @@ export interface NodeResult {
   chartData?: ChartPoint[]
   /** Sub-graph for relationship/path visualization */
   subGraph?: GraphData
+  /** 真实后端下发的结构化输出（node_result 事件），逐项截断后的值 */
+  outputs?: NodeOutput[]
+}
+
+/** 真实后端单个 StepOutputItem 的前端视图（已截断、JSON 安全） */
+export interface NodeOutput {
+  /** 同一步骤内的输出序号（1 起） */
+  id: number
+  /** 来源：算法名 / "python code" / "graph_query" */
+  source: string
+  /** 输出类别（graph_algorithm / post_processing / numeric_computation / subgraph_extraction） */
+  kind?: string
+  description?: string
+  /** output_schema 的字段描述（截断标记由后端写入） */
+  fields?: { key: string; type: string; desc?: string; truncated?: boolean; total?: number }[]
+  /** 截断后的值 */
+  value: unknown
+  /** 值是否被截断 */
+  truncated?: boolean
+  /** 截断前条目总数 */
+  total?: number
+  path?: string | null
 }
 
 export interface ChartPoint {
@@ -100,6 +127,8 @@ export interface WorkflowPlan {
     decomposing: number
     selecting: number
   }
+  /** 发起该消息时是否处于交互/专家模式（决定 dag-ready 的确认按钮与真实后端执行） */
+  interactive?: boolean
   /** Accumulated markdown from result (text) events */
   markdown?: string
   /** Error message from backend, if any */

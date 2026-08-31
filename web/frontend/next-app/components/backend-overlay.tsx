@@ -4,26 +4,23 @@ import { ServerCrash, LoaderCircle } from "lucide-react"
 import { useI18n } from "@/core/i18n/i18n-provider"
 import { useBackendStatus } from "@/hooks/use-backend-status"
 
-/** 后端服务未就绪时覆盖全屏的遮罩，后端上线后自动消失。 */
+/** 后端首次上线前的全屏遮罩；上线后即使掉线也不遮挡，交由 socket 静默重连。 */
 export function BackendOverlay() {
   const { status, failures, everOnline } = useBackendStatus()
   const { t } = useI18n()
 
-  // 后端未确认在线（含首次探测中）即显示遮罩，第一帧就出现
-  if (status === "online") return null
+  // 从未连上时才显示遮罩（含首次探测中），第一帧就出现；
+  // 曾经连上过则不再遮挡，断线由 socket 自动重连处理
+  if (status === "online" || everOnline) return null
 
-  // 从未连上：视为后端启动中；启动一段时间后仍失败则提示检查后端
-  const starting = !everOnline && failures <= 2
+  // 视为后端启动中；启动一段时间后仍失败则提示检查后端
+  const starting = failures <= 2
   const title = starting
     ? t("backend.startingTitle", "后端服务启动中")
-    : everOnline
-      ? t("backend.reconnectingTitle", "后端连接已断开")
-      : t("backend.unreachableTitle", "无法连接后端服务")
+    : t("backend.unreachableTitle", "无法连接后端服务")
   const desc = starting
     ? t("backend.startingDesc", "正在等待后端服务就绪，请稍候…")
-    : everOnline
-      ? t("backend.reconnectingDesc", "正在尝试重新连接…")
-      : t("backend.unreachableDesc", "请确认后端服务已启动，前端将自动重试连接。")
+    : t("backend.unreachableDesc", "请确认后端服务已启动，前端将自动重试连接。")
 
   return (
     <div

@@ -40,7 +40,6 @@ if __name__ == "__main__":
     port = find_free_port()
     print(f"Using available port: {port}")
 
-    print(f"Frontend: http://localhost:3000")
     app.run(
         debug=False,
         host="0.0.0.0",

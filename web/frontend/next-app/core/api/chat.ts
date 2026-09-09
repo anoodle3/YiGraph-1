@@ -4,7 +4,7 @@
 // POST /api/chat/stream，响应为 NDJSON 流（每行一个事件 JSON），
 // 事件格式与旧版后端的 chat_response 协议一致。
 // 断线后自动带 resume 重新请求，后端重放缓冲事件、续接新事件。
-// 后端不可用时自动回退到 dag-planner 客户端模拟。
+// 后端不可用时请求失败，前端提示用户。
 // ============================================================
 
 import type { Algorithm } from "@/core/types"

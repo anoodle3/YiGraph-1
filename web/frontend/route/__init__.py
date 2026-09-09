@@ -28,14 +28,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class HealthCheckFilter(logging.Filter):
-    """探活轮询（前端每几秒一次 GET /api/health）无诊断价值，从访问日志中过滤。"""
-
+class AccessLogFilter(logging.Filter):
     def filter(self, record):
-        return "/api/health" not in record.getMessage()
+        message = record.getMessage()
+        if '] "' not in message:
+            return True
+        if "/api/health" in message:
+            return False
+        return "/api/" in message
 
 
-logging.getLogger("werkzeug").addFilter(HealthCheckFilter())
+logging.getLogger("werkzeug").addFilter(AccessLogFilter())
 
 
 def create_app():

@@ -7,7 +7,6 @@ import { useDatasets } from "@/core/datasets-store"
 import { useModels } from "@/core/models-store"
 import { ChatHistory } from "./chat-history"
 import { ChatMain } from "./chat-main"
-import { planWorkflow, simulateNodeResult, generateReport, reportToMarkdown } from "@/core/dag-planner"
 import type { Algorithm, ChatMessage, SubProblem, WorkflowPlan } from "@/core/types"
 import type { ChatSettings } from "./chat-input"
 import type { NodeExecutionContent } from "@/core/api/chat"
@@ -106,8 +105,6 @@ export function ChatWorkspace() {
       const dataset = datasets.find((d) => d.id === settings.dataset)
 
       const adapter = createAdapterState()
-      /** 保存 DAG 到达时转换好的节点列表，供 stream_end 时执行模拟使用 */
-      let savedNodes: WorkflowPlan["nodes"] = []
 
       sendChatRequest(
         {
@@ -208,7 +205,6 @@ export function ChatWorkspace() {
               idMapsRef.current.set(assistantMsgId, planData.idMap)
 
               // dag-ready：拆解/选算法过程已由上面的真实事件流驱动
-              savedNodes = planData.nodes
               updatePlan(sessionId, assistantMsgId, (p) => ({
                 ...p,
                 phase: "dag-ready" as const,
@@ -243,22 +239,7 @@ export function ChatWorkspace() {
 
             case "stream_end": {
               finishUnderstandingProgress(sessionId, assistantMsgId)
-              if (
-                adapter.resultParagraphs.length > 0 &&
-                !settings.interactiveMode &&
-                !settings.expertMode
-              ) {
-                // auto 模式且后端未下发节点事件：临时回退到客户端模拟
-                if (!adapter.nodeEventsSeen) {
-                  await simulateExecution({
-                    sessionId,
-                    messageId: assistantMsgId,
-                    nodes: savedNodes,
-                    getById,
-                    updatePlan,
-                  })
-                }
-
+              if (adapter.resultParagraphs.length > 0) {
                 updatePlan(sessionId, assistantMsgId, (p) => ({
                   ...p,
                   phase: "executed" as const,
@@ -292,9 +273,6 @@ export function ChatWorkspace() {
       const msg = session?.messages.find((m) => m.id === messageId)
       const plan = msg?.plan
       if (!plan) return
-
-      // 保存节点列表供闭包内使用（不依赖后续 sessions 状态）
-      const execNodes = plan.nodes
 
       // 交互模式（提交时记录在 plan 上）且后端在线 → 发给后端执行
       if (isChatConnected() && plan.interactive) {
@@ -354,17 +332,6 @@ export function ChatWorkspace() {
             }
 
             if (result.kind === "stream_end") {
-              // 后端未下发节点事件：临时回退到客户端模拟
-              if (!adapter.nodeEventsSeen) {
-                await simulateExecution({
-                  sessionId: activeId,
-                  messageId,
-                  nodes: execNodes,
-                  getById,
-                  updatePlan,
-                })
-              }
-
               updatePlan(activeId, messageId, (p) => ({
                 ...p,
                 phase: "executed" as const,
@@ -383,28 +350,12 @@ export function ChatWorkspace() {
         return
       }
 
-      // WebSocket 未连接或非 interact 模式 → 客户端模拟
-      const runMock = async () => {
-        await simulateExecution({
-          sessionId: activeId,
-          messageId,
-          nodes: execNodes,
-          getById,
-          updatePlan,
-          pacing: { runningMs: 900, doneMs: 220 },
-        })
-        const report = generateReport(
-          { ...plan, phase: "executed" },
-          algorithms,
-        )
-        const md = reportToMarkdown(report)
-        updatePlan(activeId, messageId, (p) => ({
-          ...p,
-          phase: "executed" as const,
-          markdown: md,
-        }))
-      }
-      runMock()
+      // 后端未连接或非交互模式：不执行客户端模拟，直接提示
+      updatePlan(activeId, messageId, (p) => ({
+        ...p,
+        phase: "executed" as const,
+        error: "后端服务未连接，无法执行该分析。请确认后端已启动后重试。",
+      }))
     },
     [activeId, algorithms, getById, sessions, settings, models, datasets, updatePlan],
   )
@@ -446,7 +397,6 @@ export function ChatWorkspace() {
         const model = models.find((m) => m.id === settings.model)
         const dataset = datasets.find((d) => d.id === settings.dataset)
         const adapter = createAdapterState()
-        let savedNodes: WorkflowPlan["nodes"] = []
 
         sendChatRequest(
           {
@@ -549,7 +499,6 @@ export function ChatWorkspace() {
                 idMapsRef.current.set(assistantMsgId, planData.idMap)
 
                 // dag-ready：拆解/选算法过程已由上面的真实事件流驱动
-                savedNodes = planData.nodes
                 updatePlan(activeId, assistantMsgId, (p) => ({
                   ...p,
                   phase: "dag-ready" as const,
@@ -585,37 +534,11 @@ export function ChatWorkspace() {
           },
         )
       } else {
-        // WebSocket 未连接 → mock
-        const planDraft = planWorkflow({
-          question: modificationText,
-          algorithms,
-        })
+        // 后端未连接：无法修订 DAG，直接提示
         updatePlan(activeId, assistantMsgId, (p) => ({
           ...p,
-          understanding: planDraft.understanding,
-          subProblems: planDraft.subProblems,
-          nodes: planDraft.nodes,
-          edges: planDraft.edges,
+          error: "后端服务未连接，无法修改 DAG。请确认后端已启动后重试。",
         }))
-        animatePhase(activeId, assistantMsgId, "understanding", updatePlan).then(
-          () => {
-            animatePhase(activeId, assistantMsgId, "decomposing", updatePlan)
-              .then(() =>
-                animatePhase(
-                  activeId,
-                  assistantMsgId,
-                  "selecting",
-                  updatePlan,
-                ),
-              )
-              .then(() =>
-                updatePlan(activeId, assistantMsgId, (p) => ({
-                  ...p,
-                  phase: "dag-ready",
-                })),
-              )
-          },
-        )
       }
     },
     [
@@ -674,49 +597,15 @@ export function ChatWorkspace() {
       }
       appendMessage(sessionId, assistantMsg)
 
-      // 判断使用 WebSocket 还是 mock
+      // 判断后端是否可用
       if (isChatConnected()) {
         handleSubmitViaWS(question, sessionId, assistantMsgId)
       } else {
-        // 回退到客户端 mock
-        const planDraft = planWorkflow({ question, algorithms })
+        // 后端未连接：不进行客户端模拟，直接提示
         updatePlan(sessionId, assistantMsgId, (p) => ({
           ...p,
-          understanding: planDraft.understanding,
-          subProblems: planDraft.subProblems,
-          nodes: planDraft.nodes,
-          edges: planDraft.edges,
+          error: "后端服务未连接，无法开始分析。请确认后端已启动后重试。",
         }))
-        await animatePhase(sessionId, assistantMsgId, "understanding", updatePlan)
-        await animatePhase(sessionId, assistantMsgId, "decomposing", updatePlan)
-        await animatePhase(sessionId, assistantMsgId, "selecting", updatePlan)
-
-        if (settings.interactiveMode || settings.expertMode) {
-          // 交互模式：停在 dag-ready，等用户确认或修改
-          updatePlan(sessionId, assistantMsgId, (p) => ({
-            ...p,
-            phase: "dag-ready",
-          }))
-        } else {
-          // 普通模式：自动执行
-          await simulateExecution({
-            sessionId,
-            messageId: assistantMsgId,
-            nodes: planDraft.nodes,
-            getById,
-            updatePlan,
-          })
-          const report = generateReport(
-            { ...planDraft, phase: "executed" } as WorkflowPlan,
-            algorithms,
-          )
-          const md = reportToMarkdown(report)
-          updatePlan(sessionId, assistantMsgId, (p) => ({
-            ...p,
-            phase: "executed" as const,
-            markdown: md,
-          }))
-        }
       }
     },
     [
@@ -752,59 +641,6 @@ export function ChatWorkspace() {
       />
     </div>
   )
-}
-
-/**
- * 逐节点推进的客户端模拟执行（后端未下发节点事件时的临时回退）。
- * 后端节点事件链路稳定后应整体移除。
- */
-async function simulateExecution({
-  sessionId,
-  messageId,
-  nodes,
-  getById,
-  updatePlan,
-  pacing = { runningMs: 700, doneMs: 200 },
-}: {
-  sessionId: string
-  messageId: string
-  nodes: WorkflowPlan["nodes"]
-  getById: (id: string) => Algorithm | undefined
-  updatePlan: ReturnType<typeof useChat>["updatePlan"]
-  pacing?: { runningMs: number; doneMs: number }
-}) {
-  updatePlan(sessionId, messageId, (p) => ({
-    ...p,
-    phase: "executing" as const,
-  }))
-  for (const node of nodes) {
-    const startedAtMs = Date.now()
-    updatePlan(sessionId, messageId, (p) => ({
-      ...p,
-      nodes: p.nodes.map((n) =>
-        n.id === node.id
-          ? { ...n, status: "running" as const, startedAtMs }
-          : n,
-      ),
-    }))
-    await sleep(pacing.runningMs)
-    const algo = getById(node.algorithmId)
-    const result = simulateNodeResult(node, algo)
-    updatePlan(sessionId, messageId, (p) => ({
-      ...p,
-      nodes: p.nodes.map((n) =>
-        n.id === node.id
-          ? {
-              ...n,
-              status: "done" as const,
-              result,
-              finishedAtMs: Date.now(),
-            }
-          : n,
-      ),
-    }))
-    await sleep(pacing.doneMs)
-  }
 }
 
 /** 把一条真实节点执行事件应用到对应节点（经 dag 事件的 idMap 定位） */

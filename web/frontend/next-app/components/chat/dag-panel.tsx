@@ -247,37 +247,6 @@ function computeLayout(
 ): Record<string, Pos> {
   const positions: Record<string, Pos> = {}
 
-  // mock 模式：有明确的 n-pre / n-report 节点 → 三列固定布局
-  const head = nodes.find((n) => n.id === "n-pre")
-  const tail = nodes.find((n) => n.id === "n-report")
-
-  if (head || tail) {
-    const middle = nodes.filter((n) => n !== head && n !== tail)
-    const middleTotal = middle.reduce(
-      (s, n) => s + estimateNodeHeight(n.label) + ROW_GAP,
-      0,
-    )
-    const headH = head ? estimateNodeHeight(head.label) : 0
-    const tailH = tail ? estimateNodeHeight(tail.label) : 0
-    const totalHeight = Math.max(middleTotal, headH, tailH, NODE_MIN_H)
-    if (head) {
-      positions[head.id] = {
-        x: 20,
-        y: (totalHeight - headH) / 2 + 20,
-        h: headH,
-      }
-    }
-    stackColumn(middle, 20 + COL_GAP, 20, positions)
-    if (tail) {
-      positions[tail.id] = {
-        x: 20 + COL_GAP * 2,
-        y: (totalHeight - tailH) / 2 + 20,
-        h: tailH,
-      }
-    }
-    return positions
-  }
-
   // 后端 DAG 模式：根据拓扑自动分列
   const incoming = new Set<string>()
   const outgoing = new Set<string>()
@@ -392,8 +361,6 @@ function DagCanvas({
               x={pos.x}
               y={pos.y}
               onInspect={() => onInspect(node.algorithmId)}
-              isHead={node.id === "n-pre"}
-              isTail={node.id === "n-report"}
             />
           )
         })}
@@ -453,8 +420,6 @@ function DagNodeBox({
   x,
   y,
   onInspect,
-  isHead,
-  isTail,
 }: {
   node: DagNode
   algoName: string
@@ -463,15 +428,9 @@ function DagNodeBox({
   x: number
   y: number
   onInspect: () => void
-  isHead: boolean
-  isTail: boolean
 }) {
   const { t } = useI18n()
-  const roleLabel = isHead
-    ? t("dag.preprocess", "预处理")
-    : isTail
-      ? t("dag.aggregate", "汇总")
-      : t("dag.subtask", "子任务")
+  const roleLabel = t("dag.subtask", "子任务")
   const statusBg =
     node.status === "done"
       ? "border-accent/40 bg-accent/10"
@@ -524,13 +483,7 @@ function DagNodeBox({
       <div className="mt-1 break-words text-sm font-semibold leading-snug text-foreground">
         {node.label}
       </div>
-      {isHead || isTail ? (
-        <span className="mt-auto text-[11px] text-muted-foreground">
-          {isHead
-            ? t("dag.buildGraph", "图构建 & 数据标准化")
-            : t("dag.synthesize", "多维度结果综合")}
-        </span>
-      ) : noAlgorithm ? (
+      {noAlgorithm ? (
         <span className="mt-auto text-[11px] text-muted-foreground leading-tight">
           {algoDisplayName || t("dag.noAlgoTask", "—")}
         </span>

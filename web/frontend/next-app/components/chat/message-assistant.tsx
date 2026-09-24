@@ -14,12 +14,14 @@ export function MessageAssistant({
   userQuestion,
   onExecute,
   onModify,
+  onLayoutChange,
   interactive,
 }: {
   message: ChatMessage
   userQuestion: string
   onExecute: () => void
   onModify: (modificationText: string) => void
+  onLayoutChange: (layout: Record<string, { x: number; y: number }>) => void
   interactive: boolean
 }) {
   const { t } = useI18n()
@@ -51,7 +53,14 @@ export function MessageAssistant({
           {(phase === "dag-ready" ||
             phase === "executing" ||
             phase === "executed") && (
-            <DagPanel plan={plan} userQuestion={userQuestion} onExecute={onExecute} onModify={onModify} interactive={interactive} />
+            <DagPanel
+              plan={plan}
+              userQuestion={userQuestion}
+              onExecute={onExecute}
+              onModify={onModify}
+              onLayoutChange={onLayoutChange}
+              interactive={interactive}
+            />
           )}
 
           {(phase === "executing" || phase === "executed") && (

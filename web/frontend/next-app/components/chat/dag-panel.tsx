@@ -11,6 +11,7 @@ import {
   Circle,
   ThumbsUp,
   ThumbsDown,
+  RotateCcw,
 } from "lucide-react"
 import type { DagEdge, DagNode, WorkflowPlan } from "@/core/types"
 import { useI18n } from "@/core/i18n/i18n-provider"
@@ -36,12 +37,14 @@ export function DagPanel({
   userQuestion,
   onExecute,
   onModify,
+  onLayoutChange,
   interactive,
 }: {
   plan: WorkflowPlan
   userQuestion: string
   onExecute: () => void
   onModify: (modificationText: string) => void
+  onLayoutChange: (layout: Record<string, { x: number; y: number }>) => void
   interactive: boolean
 }) {
   const { t } = useI18n()
@@ -51,6 +54,8 @@ export function DagPanel({
   const [feedback, setFeedback] = React.useState<"like" | "dislike" | null>(null)
   const phase = plan.phase
   const readyToExecute = phase === "dag-ready" && interactive
+  const layout = plan.layout ?? {}
+  const hasCustomLayout = Object.keys(layout).length > 0
 
   const handleFeedback = (type: "like" | "dislike") => {
     if (feedback) return
@@ -82,6 +87,18 @@ export function DagPanel({
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <Info className="size-3" />
           {t("dag.inspectHint", "点击算法节点查看详情")}
+          {hasCustomLayout && (
+            <>
+              <span className="mx-1 text-border">|</span>
+              <button
+                onClick={() => onLayoutChange({})}
+                className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <RotateCcw className="size-3" />
+                {t("dag.resetLayout", "重置布局")}
+              </button>
+            </>
+          )}
           <span className="mx-1 text-border">|</span>
           <button
             onClick={() => handleFeedback("like")}
@@ -113,7 +130,13 @@ export function DagPanel({
       </div>
 
       <div className="relative">
-        <DagCanvas plan={plan} onInspect={setInfoId} />
+        <DagCanvas
+          plan={plan}
+          onInspect={setInfoId}
+          onMoveNode={(nodeId, pos) =>
+            onLayoutChange({ ...layout, [nodeId]: pos })
+          }
+        />
       </div>
 
       {readyToExecute && (
@@ -211,6 +234,11 @@ const NODE_W = 200
 const NODE_MIN_H = 78
 const COL_GAP = 260
 const ROW_GAP = 32
+const CANVAS_MIN_W = 400
+const CANVAS_MIN_H = 200
+const CANVAS_PAD = 20
+/** 超过该位移才判定为拖动，避免和"点击算法详情"冲突 */
+const DRAG_THRESHOLD_PX = 4
 // 长标签换行的高度估算参数：中文每字约 14px，节点内可用宽度约 172px
 const LABEL_CHARS_PER_LINE = 10
 const LABEL_LINE_HEIGHT = 20
@@ -272,32 +300,144 @@ function computeLayout(
   return positions
 }
 
+interface DragSession {
+  id: string
+  pointerId: number
+  startX: number
+  startY: number
+  originX: number
+  originY: number
+  moved: boolean
+}
+
 function DagCanvas({
   plan,
   onInspect,
+  onMoveNode,
 }: {
   plan: WorkflowPlan
   onInspect: (algoId: string) => void
+  onMoveNode: (nodeId: string, pos: { x: number; y: number }) => void
 }) {
   const { getById } = useAlgorithms()
-  const positions = React.useMemo(
+
+  // 自动布局（按拓扑分列）
+  const basePositions = React.useMemo(
     () => computeLayout(plan.nodes, plan.edges),
     [plan.nodes, plan.edges],
   )
 
-  // 根据实际布局计算画布尺寸
+  // 拖动预览：拖动过程中只更新本地坐标，松手后才写回 plan.layout
+  const [drag, setDrag] = React.useState<{
+    id: string
+    x: number
+    y: number
+  } | null>(null)
+  const dragRef = React.useRef<DragSession | null>(null)
+  const dragPosRef = React.useRef<{ id: string; x: number; y: number } | null>(null)
+  const rafRef = React.useRef<number | null>(null)
+  const suppressClickRef = React.useRef(false)
+
+  // plan.layout（已保存的手动位置）覆盖自动布局，拖动预览再覆盖两者
+  const positions = React.useMemo(() => {
+    const next: Record<string, Pos> = {}
+    for (const [id, p] of Object.entries(basePositions)) {
+      const saved = plan.layout?.[id]
+      next[id] = saved ? { ...p, x: saved.x, y: saved.y } : p
+    }
+    if (drag && next[drag.id]) {
+      next[drag.id] = { ...next[drag.id], x: drag.x, y: drag.y }
+    }
+    return next
+  }, [basePositions, plan.layout, drag])
+
+  // 卸载时取消挂起的帧回调
+  React.useEffect(
+    () => () => {
+      if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current)
+    },
+    [],
+  )
+
+  const handlePointerDown =
+    (nodeId: string) => (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return
+      // 节点内的链接/按钮保持原生点击行为，不作为拖动把手
+      const target = e.target as HTMLElement | null
+      if (target?.closest("button, a, input, textarea, select")) return
+      const pos = positions[nodeId]
+      if (!pos) return
+      e.currentTarget.setPointerCapture(e.pointerId)
+      dragRef.current = {
+        id: nodeId,
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        originX: pos.x,
+        originY: pos.y,
+        moved: false,
+      }
+      suppressClickRef.current = false
+    }
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const session = dragRef.current
+    if (!session || session.pointerId !== e.pointerId) return
+    const dx = e.clientX - session.startX
+    const dy = e.clientY - session.startY
+    if (!session.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+    session.moved = true
+    dragPosRef.current = {
+      id: session.id,
+      x: Math.max(0, session.originX + dx),
+      y: Math.max(0, session.originY + dy),
+    }
+    // 每帧最多提交一次，避免 pointermove 高频重渲染
+    if (rafRef.current === null) {
+      rafRef.current = window.requestAnimationFrame(() => {
+        rafRef.current = null
+        setDrag(dragPosRef.current)
+      })
+    }
+  }
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const session = dragRef.current
+    if (!session || session.pointerId !== e.pointerId) return
+    dragRef.current = null
+    if (rafRef.current !== null) {
+      window.cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    const finalPos = dragPosRef.current
+    dragPosRef.current = null
+    setDrag(null)
+    if (!session.moved) {
+      // 未超过阈值：保持普通点击行为
+      suppressClickRef.current = false
+      return
+    }
+    // 拖动结束后抑制随之而来的 click，避免误开算法详情弹窗
+    suppressClickRef.current = true
+    if (finalPos) onMoveNode(session.id, { x: finalPos.x, y: finalPos.y })
+  }
+
+  const handleClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressClickRef.current) return
+    suppressClickRef.current = false
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  // 根据实际布局（含拖动预览）计算画布尺寸，拖出右下角时画布随之扩展
   const allPos = Object.values(positions)
-  const width = Math.max(
-    ...allPos.map((p) => p.x + NODE_W),
-    400,
-  ) + 20
-  const height = Math.max(
-    ...allPos.map((p) => p.y + p.h),
-    200,
-  ) + 20
+  const width =
+    Math.max(...allPos.map((p) => p.x + NODE_W), CANVAS_MIN_W) + CANVAS_PAD
+  const height =
+    Math.max(...allPos.map((p) => p.y + p.h), CANVAS_MIN_H) + CANVAS_PAD
 
   return (
-    <div className="bg-dots w-full overflow-x-auto">
+    <div className="bg-dots w-full overflow-auto">
       <div
         className="relative"
         style={{ width: `${width}px`, height: `${height}px` }}
@@ -360,6 +500,12 @@ function DagCanvas({
               noAlgorithm={noAlgo}
               x={pos.x}
               y={pos.y}
+              dragging={drag?.id === node.id}
+              onPointerDown={handlePointerDown(node.id)}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              onClickCapture={handleClickCapture}
               onInspect={() => onInspect(node.algorithmId)}
             />
           )
@@ -419,6 +565,12 @@ function DagNodeBox({
   noAlgorithm,
   x,
   y,
+  dragging,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  onClickCapture,
   onInspect,
 }: {
   node: DagNode
@@ -427,6 +579,12 @@ function DagNodeBox({
   noAlgorithm?: boolean
   x: number
   y: number
+  dragging?: boolean
+  onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
+  onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void
+  onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void
+  onPointerCancel: (e: React.PointerEvent<HTMLDivElement>) => void
+  onClickCapture: (e: React.MouseEvent<HTMLDivElement>) => void
   onInspect: () => void
 }) {
   const { t } = useI18n()
@@ -454,9 +612,17 @@ function DagNodeBox({
 
   return (
     <div
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onClickCapture={onClickCapture}
       className={cn(
-        "absolute flex flex-col rounded-lg border px-3 py-2 shadow-sm transition-colors",
+        "absolute flex touch-none select-none flex-col rounded-lg border px-3 py-2 shadow-sm transition-colors",
         statusBg,
+        dragging
+          ? "z-20 cursor-grabbing shadow-md ring-2 ring-primary/30"
+          : "cursor-grab",
       )}
       style={{
         left: `${x}px`,
@@ -464,6 +630,7 @@ function DagNodeBox({
         width: `${NODE_W}px`,
         minHeight: `${NODE_MIN_H}px`,
       }}
+      title={t("dag.dragNode", "拖动节点调整布局")}
     >
       <div className="flex items-center gap-2">
         <Icon

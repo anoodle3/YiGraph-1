@@ -113,6 +113,8 @@ export interface WorkflowPlan {
   subProblems: SubProblem[]
   nodes: DagNode[]
   edges: DagEdge[]
+  /** 用户手动拖动后的节点坐标覆盖（仅影响视觉布局，不改变依赖与执行顺序） */
+  layout?: Record<string, { x: number; y: number }>
   /** Phase of the assistant reply */
   phase:
     | "understanding"

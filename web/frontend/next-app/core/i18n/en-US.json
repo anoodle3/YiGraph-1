@@ -112,7 +112,8 @@
   },
   "dag": {
     "panelTitle": "Workflow DAG", "nodes": "nodes", "edges": "edges",
-    "inspectHint": "Click a node to view algorithm details",
+    "inspectHint": "Drag a node to rearrange, click one for algorithm details",
+    "resetLayout": "Reset layout", "dragNode": "Drag to rearrange",
     "readyHint": "Planning complete. Confirm execution or modify the DAG.",
     "modifyDag": "Modify DAG", "modifyTitle": "Modify Workflow DAG", "modifyDesc": "Enter your DAG modification suggestions", "modifyPlaceholder": "Describe how you'd like to adjust this workflow...", "confirmExecute": "Execute",
     "executing": "Executing", "executed": "Complete",

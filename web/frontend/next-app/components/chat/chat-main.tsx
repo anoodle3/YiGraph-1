@@ -14,6 +14,7 @@ export function ChatMain({
   onSubmit,
   onExecute,
   onModify,
+  onLayoutChange,
   settings,
   onSettingsChange,
   datasets,
@@ -23,6 +24,10 @@ export function ChatMain({
   onSubmit: (q: string) => void
   onExecute: (messageId: string) => void
   onModify: (messageId: string, modificationText: string) => void
+  onLayoutChange: (
+    messageId: string,
+    layout: Record<string, { x: number; y: number }>,
+  ) => void
   settings: ChatSettings
   onSettingsChange: (s: ChatSettings) => void
   datasets: Dataset[]
@@ -32,9 +37,12 @@ export function ChatMain({
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const endRef = React.useRef<HTMLDivElement>(null)
 
+  // 内容签名：只反映"回复内容"的变化。
+  // 手动拖动 DAG 节点只写 plan.layout，不应触发自动滚到底部。
+  const scrollSignal = buildScrollSignal(session)
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
-  }, [session?.messages.length, session?.messages])
+  }, [scrollSignal])
 
   const hasMessages = !!session?.messages.length
 
@@ -80,6 +88,7 @@ export function ChatMain({
                   }
                   onExecute={() => onExecute(m.id)}
                   onModify={(text) => onModify(m.id, text)}
+                  onLayoutChange={(layout) => onLayoutChange(m.id, layout)}
                   interactive={m.plan?.interactive ?? false}
                 />
               ),
@@ -108,6 +117,36 @@ function isBusy(session: ChatSession | null) {
   if (!last || last.role !== "assistant") return false
   const p = last.plan?.phase
   return p === "understanding" || p === "decomposing" || p === "selecting" || p === "executing"
+}
+
+/**
+ * 自动滚动判定用的内容签名。
+ * 刻意不包含 plan.layout —— 用户拖动 DAG 节点时只有该字段变化，
+ * 若把它算进来，每次落位都会把会话拉到底部。
+ */
+function buildScrollSignal(session: ChatSession | null): string {
+  const messages = session?.messages ?? []
+  const last = messages[messages.length - 1]
+  const plan = last?.role === "assistant" ? last.plan : undefined
+  if (!plan) return `${messages.length}|${last?.content.length ?? 0}`
+  return [
+    messages.length,
+    last?.content.length ?? 0,
+    plan.phase,
+    plan.progress.understanding,
+    plan.progress.decomposing,
+    plan.progress.selecting,
+    plan.understanding.length,
+    plan.subProblems.length,
+    ...plan.nodes.map(
+      (n) =>
+        `${n.id}:${n.status}:${n.finishedAtMs ?? ""}:${n.label.length}:${n.result?.outputs?.length ?? 0}`,
+    ),
+    plan.edges.length,
+    plan.markdown?.length ?? 0,
+    plan.error ?? "",
+    plan.report ? "report" : "",
+  ].join("|")
 }
 
 function EmptyState({ onPick }: { onPick: (q: string) => void }) {

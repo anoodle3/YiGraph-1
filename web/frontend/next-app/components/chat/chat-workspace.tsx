@@ -360,6 +360,18 @@ export function ChatWorkspace() {
     [activeId, algorithms, getById, sessions, settings, models, datasets, updatePlan],
   )
 
+  /** 用户手动调整 DAG 节点位置：整张覆盖表写回 plan（随会话持久化） */
+  const handleLayoutChange = React.useCallback(
+    (
+      messageId: string,
+      layout: Record<string, { x: number; y: number }>,
+    ) => {
+      if (!activeId) return
+      updatePlan(activeId, messageId, (p) => ({ ...p, layout }))
+    },
+    [activeId, updatePlan],
+  )
+
   /** 修改 DAG */
   const handleModifyDag = React.useCallback(
     (originalMsgId: string, modificationText: string) => {
@@ -634,6 +646,7 @@ export function ChatWorkspace() {
         onSubmit={handleSubmit}
         onExecute={handleExecute}
         onModify={handleModifyDag}
+        onLayoutChange={handleLayoutChange}
         settings={settings}
         onSettingsChange={setSettings}
         datasets={datasets}

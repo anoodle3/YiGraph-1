@@ -108,7 +108,8 @@
   },
   "dag": {
     "panelTitle": "工作流 DAG", "nodes": "节点", "edges": "边",
-    "inspectHint": "点击算法节点查看详情",
+    "inspectHint": "拖动节点调整布局，点击算法节点查看详情",
+    "resetLayout": "重置布局", "dragNode": "拖动节点调整布局",
     "readyHint": "规划完成。请确认执行或修改 DAG。",
     "modifyDag": "修改 DAG", "modifyTitle": "修改工作流 DAG", "modifyDesc": "请输入您的 DAG 修改建议", "modifyPlaceholder": "描述您想要如何调整这个工作流…", "confirmExecute": "确定执行",
     "executing": "执行中", "executed": "执行完成",

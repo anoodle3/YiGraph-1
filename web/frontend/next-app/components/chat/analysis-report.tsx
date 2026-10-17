@@ -38,11 +38,27 @@ export function AnalysisReport({
     "本报告由 YiGraph 智能分析系统自动生成，仅供初步核查参考，不构成最终结论。",
   )
 
-  const html = React.useMemo(() => {
-    if (!markdown) return ""
-    return marked.parse(appendDisclaimer(markdown, disclaimer)) as string
-    // disclaimer 的取值跟随当前界面语言；语言切换后此处随依赖变化重新解析
-  }, [markdown, disclaimer])
+  const reportMarkdown = markdown ? appendDisclaimer(markdown, disclaimer) : ""
+  const html = React.useMemo(
+    () => marked.parse(reportMarkdown) as string,
+    [reportMarkdown],
+  )
+
+  const handleExport = () => {
+    if (!markdown?.trim()) return
+
+    const blob = new Blob([reportMarkdown], {
+      type: "text/markdown;charset=utf-8",
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `yigraph-report-${new Date().toISOString().replace(/[:.]/g, "-")}.md`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
 
   const handleFeedback = (type: "like" | "dislike") => {
     if (feedback) return
@@ -77,7 +93,13 @@ export function AnalysisReport({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={handleExport}
+            disabled={!markdown?.trim()}
+          >
             <Download className="size-3.5" />
             {t("dag.exportReport", "导出报告")}
           </Button>

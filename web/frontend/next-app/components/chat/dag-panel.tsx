@@ -235,7 +235,6 @@ const NODE_MIN_H = 78
 const COL_GAP = 260
 const ROW_GAP = 32
 const CANVAS_MIN_W = 400
-const CANVAS_MIN_H = 200
 const CANVAS_PAD = 20
 /** 超过该位移才判定为拖动，避免和"点击算法详情"冲突 */
 const DRAG_THRESHOLD_PX = 4
@@ -259,10 +258,11 @@ function stackColumn(
   x: number,
   startY: number,
   positions: Record<string, Pos>,
+  measuredHeights: Record<string, number>,
 ): number {
   let y = startY
   for (const n of items) {
-    const h = estimateNodeHeight(n.label)
+    const h = measuredHeights[n.id] ?? estimateNodeHeight(n.label)
     positions[n.id] = { x, y, h }
     y += h + ROW_GAP
   }
@@ -272,6 +272,7 @@ function stackColumn(
 function computeLayout(
   nodes: DagNode[],
   edges: DagEdge[],
+  measuredHeights: Record<string, number>,
 ): Record<string, Pos> {
   const positions: Record<string, Pos> = {}
 
@@ -293,9 +294,9 @@ function computeLayout(
     (n) => incoming.has(n.id) && outgoing.has(n.id),
   )
 
-  stackColumn(sources, 20, 20, positions)
-  stackColumn(intermediates, 20 + COL_GAP, 20, positions)
-  stackColumn(sinks, 20 + COL_GAP * 2, 20, positions)
+  stackColumn(sources, 20, 20, positions, measuredHeights)
+  stackColumn(intermediates, 20 + COL_GAP, 20, positions, measuredHeights)
+  stackColumn(sinks, 20 + COL_GAP * 2, 20, positions, measuredHeights)
 
   return positions
 }
@@ -320,11 +321,22 @@ function DagCanvas({
   onMoveNode: (nodeId: string, pos: { x: number; y: number }) => void
 }) {
   const { getById } = useAlgorithms()
+  const [measuredHeights, setMeasuredHeights] = React.useState<
+    Record<string, number>
+  >({})
 
-  // 自动布局（按拓扑分列）
+  const handleHeightChange = React.useCallback((nodeId: string, height: number) => {
+    setMeasuredHeights((current) =>
+      current[nodeId] === height
+        ? current
+        : { ...current, [nodeId]: height },
+    )
+  }, [])
+
+  // 自动布局（按拓扑分列）；首次用估算值，挂载后改用节点的真实高度。
   const basePositions = React.useMemo(
-    () => computeLayout(plan.nodes, plan.edges),
-    [plan.nodes, plan.edges],
+    () => computeLayout(plan.nodes, plan.edges, measuredHeights),
+    [plan.nodes, plan.edges, measuredHeights],
   )
 
   // 拖动预览：拖动过程中只更新本地坐标，松手后才写回 plan.layout
@@ -434,7 +446,7 @@ function DagCanvas({
   const width =
     Math.max(...allPos.map((p) => p.x + NODE_W), CANVAS_MIN_W) + CANVAS_PAD
   const height =
-    Math.max(...allPos.map((p) => p.y + p.h), CANVAS_MIN_H) + CANVAS_PAD
+    Math.max(...allPos.map((p) => p.y + p.h), 0) + CANVAS_PAD
 
   return (
     <div className="bg-dots w-full overflow-auto">
@@ -506,6 +518,7 @@ function DagCanvas({
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
               onClickCapture={handleClickCapture}
+              onHeightChange={handleHeightChange}
               onInspect={() => onInspect(node.algorithmId)}
             />
           )
@@ -571,6 +584,7 @@ function DagNodeBox({
   onPointerUp,
   onPointerCancel,
   onClickCapture,
+  onHeightChange,
   onInspect,
 }: {
   node: DagNode
@@ -585,9 +599,24 @@ function DagNodeBox({
   onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void
   onPointerCancel: (e: React.PointerEvent<HTMLDivElement>) => void
   onClickCapture: (e: React.MouseEvent<HTMLDivElement>) => void
+  onHeightChange: (nodeId: string, height: number) => void
   onInspect: () => void
 }) {
   const { t } = useI18n()
+  const nodeRef = React.useRef<HTMLDivElement>(null)
+
+  React.useLayoutEffect(() => {
+    const element = nodeRef.current
+    if (!element) return
+
+    const reportHeight = () => onHeightChange(node.id, element.offsetHeight)
+    reportHeight()
+
+    const observer = new ResizeObserver(reportHeight)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [node.id, onHeightChange])
+
   const roleLabel = t("dag.subtask", "子任务")
   const statusBg =
     node.status === "done"
@@ -612,6 +641,7 @@ function DagNodeBox({
 
   return (
     <div
+      ref={nodeRef}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

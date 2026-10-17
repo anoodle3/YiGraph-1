@@ -337,7 +337,7 @@ function RealOutputSection({
                 key={key}
                 className="flex items-baseline justify-between gap-2 border-b border-border/50 pb-1"
               >
-                <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                <span className="min-w-0 flex-1 whitespace-normal break-words text-[11px] leading-relaxed text-muted-foreground">
                   {fieldMeta(key)?.desc || key}
                 </span>
                 <span className="shrink-0 font-mono text-xs text-foreground">

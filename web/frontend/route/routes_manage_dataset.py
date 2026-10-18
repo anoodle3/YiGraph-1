@@ -390,8 +390,8 @@ def api_preview_file():
                     'success': False,
                     'error': f'Failed to read CSV file: {str(e)}'
                 }), 500
-        elif file_extension == 'txt':
-            # 直接读取文本文件
+        elif file_extension in ('txt', 'md'):
+            # 直接读取文本/Markdown文件
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
@@ -403,6 +403,7 @@ def api_preview_file():
                 except:
                     with open(file_path, 'r', encoding='latin-1') as f:
                         content = f.read()
+            content_type = file_extension
         elif file_extension == 'pdf':
             # PDF文件：返回base64编码的内容，前端使用PDF.js显示
             try:

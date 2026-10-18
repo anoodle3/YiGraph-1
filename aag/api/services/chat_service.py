@@ -12,6 +12,11 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 from .engine_service import EngineService
+from aag.models.graph_workflow_dag import (
+    WorkflowStep,
+    dag_info_to_frontend_format,
+    workflow_step_to_frontend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +92,16 @@ class ChatService:
     
     async def process_dag_modification(
         self,
-        modification_request: str
+        modification_request: str,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None
     ) -> Dict[str, Any]:
         """
         Handle DAG modification request (expert mode).
 
         Args:
             modification_request: User modification request.
+            callback: Optional callback for streaming events
+                (subproblems after revision / algorithm_selected per step).
 
         Returns:
             Dict with updated DAG info.
@@ -102,7 +110,7 @@ class ChatService:
             engine = self.engine_service.get_engine()
             logger.info(f"Process DAG modification: {modification_request[:50]}...")
 
-            result = await engine.expert_modify_dag(modification_request)
+            result = await engine.expert_modify_dag(modification_request, callback=callback)
 
             return {
                 "success": True,
@@ -171,8 +179,22 @@ class ChatService:
                 callback({
                     "type": "thinking",
                     "contentType": "text",
-                    "content": "Analyzing your question..."
+                    "content": "Analyzing your question...",
+                    "placeholder": True
                 })
+
+            # 包装回调：调度器在规划阶段已通过 callback 流式下发过 DAG，
+            # 这里跟踪并避免 engine.run 返回后重复发送
+            streamed_dag = {"value": False}
+
+            def wrapped_callback(data_chunk):
+                if isinstance(data_chunk, WorkflowStep):
+                    data_chunk = workflow_step_to_frontend(data_chunk)
+                if isinstance(data_chunk, dict) and data_chunk.get("contentType") == "dag":
+                    streamed_dag["value"] = True
+                callback(data_chunk)
+
+            engine_callback = wrapped_callback if callback else None
 
             if dataset:
                 logger.info(f"Select dataset: {dataset}, type: {dataset_type}")
@@ -180,11 +202,11 @@ class ChatService:
 
             logger.info(f"Stream chat: mode={mode}, message={message[:50]}...")
 
-            result = await engine.run(message, mode=mode, callback=callback)
+            result = await engine.run(message, mode=mode, callback=engine_callback)
 
             if mode in {"interact", "expert"} and isinstance(result, dict) and "dag_info" in result:
-                dag_content = self._convert_dag_to_frontend_format(result)
-                if callback:
+                if callback and not streamed_dag["value"]:
+                    dag_content = self._convert_dag_to_frontend_format(result)
                     callback({
                         "type": "result",
                         "contentType": "dag",
@@ -198,11 +220,12 @@ class ChatService:
                         "content": CHAT_FRIENDLY_ERROR_MSG
                     })
             elif mode == "normal" and isinstance(result, dict) and "dag_info" in result:
-                # Normal mode: result has DAG info — send DAG first
-                dag_content = self._convert_dag_to_frontend_format({
-                    "dag_info": result.get("dag_info", {})
-                })
-                if callback:
+                # Normal mode: result has DAG info — scheduler has already streamed it;
+                # only send here as fallback (e.g. old scheduler without streaming)
+                if callback and not streamed_dag["value"]:
+                    dag_content = self._convert_dag_to_frontend_format({
+                        "dag_info": result.get("dag_info", {})
+                    })
                     callback({
                         "type": "result",
                         "contentType": "dag",
@@ -248,7 +271,7 @@ class ChatService:
     
     def _convert_dag_to_frontend_format(self, dag_result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Convert DAG result to frontend format.
+        Convert DAG result to frontend format (delegates to shared helper).
 
         Args:
             dag_result: DAG result from AAG engine.
@@ -257,47 +280,7 @@ class ChatService:
             DAG data for frontend.
         """
         try:
-            dag_info = dag_result.get("dag_info", {})
-            steps = dag_info.get("steps", {})
-
-            nodes = []
-            edges = []
-
-            for step_id, step_info in steps.items():
-                task_type = step_info.get("task_type", "")
-                algorithm = step_info.get("algorithm", "")
-
-                if task_type == "graph_algorithm":
-                    if algorithm:
-                        tasktype_str = f"Graph Algorithm ({algorithm})"
-                    else:
-                        tasktype_str = "Graph Algorithm"
-                elif task_type == "numeric_analysis":
-                    tasktype_str = "Numeric Analysis"
-                else:
-                    tasktype_str = "Unknown"
-
-                nodes.append({
-                    "id": str(step_id),
-                    "label": step_info.get("question", ""),
-                    "tasktype": tasktype_str
-                })
-
-            edges_info = dag_info.get("edges", [])
-            if edges_info:
-                edges = edges_info
-            else:
-                topological_order = dag_info.get("topological_order", [])
-                for i in range(len(topological_order) - 1):
-                    edges.append({
-                        "from": str(topological_order[i]),
-                        "to": str(topological_order[i + 1])
-                    })
-
-            return {
-                "nodes": nodes,
-                "edges": edges
-            }
+            return dag_info_to_frontend_format(dag_result.get("dag_info", {}))
         except Exception as e:
             logger.error(f"Convert DAG format failed: {str(e)}")
             return {

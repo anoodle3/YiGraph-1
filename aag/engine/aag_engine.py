@@ -79,17 +79,23 @@ class AAGEngine:
         """
         return await self.scheduler.execute(query, mode=mode, callback=callback)
     
-    async def expert_modify_dag(self, modification_request: str) -> Dict[str, Any]:
+    async def expert_modify_dag(
+        self,
+        modification_request: str,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    ) -> Dict[str, Any]:
         """
         Expert mode: modify the DAG.
 
         Args:
             modification_request: User modification request.
+            callback: Optional callback for streaming (subproblems / algorithm_selected).
+                     Used in Web flow only; omit for CLI.
 
         Returns:
             Dict with updated DAG info.
         """
-        return await self.scheduler.expert_modify_dag(modification_request)
+        return await self.scheduler.expert_modify_dag(modification_request, callback=callback)
     
     async def expert_start_analysis(self) -> str:
         """

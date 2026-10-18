@@ -76,8 +76,9 @@ class WorkflowStep:
     task_type: Optional[GraphAnalysisType] = None         # 该节点表示问题解决的任务类型（graph processing / numeric_analysis）
     graph_algorithm: Optional[str] = None   # 该节点表示问题解决的图算法（设置为None）
     status: str = "pending"                 # 节点状态: pending, running, success, failed
-    result: Optional[Dict[int, StepOutputItem]] = None                      # 节点执行结果  
+    result: Optional[Dict[int, StepOutputItem]] = None                      # 节点执行结果
     llm_analysis: Optional[str] = None
+    error: Optional[str] = None             # Failure reason (recorded by set_failed)
 
     next_output_id: int = 1
 
@@ -393,8 +394,9 @@ class GraphWorkflowDAG:
         """设置步骤为失败状态"""
         if step_id not in self.steps:
             raise ValueError(f"步骤 {step_id} 不存在")
-        
+
         self.steps[step_id].status = "failed"
+        self.steps[step_id].error = error
     
     def get_step_info(self, step_id: int) -> Dict[str, Any]:
         """获取步骤的详细信息"""
@@ -482,7 +484,7 @@ class GraphWorkflowDAG:
             "topological_order": [str(sid) for sid in topological_order],
             "edges": edges_info
         }
-    
+
     def export_as_dict(self) -> Dict[str, Any]:
         """将DAG转换为字典格式"""
         steps_info = []
@@ -662,3 +664,140 @@ class GraphWorkflowDAG:
             if not isinstance(depends_on, list):
                 raise ValueError(
                     f"subqueries[{idx}]['depends_on'] 必须是 list 或省略")
+
+
+def dag_info_to_frontend_format(dag_info: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将 get_dag_info() 返回的 dag_info 字典转换为旧版前端 chat 协议使用的 DAG 格式。
+
+    Args:
+        dag_info: DAG 信息字典（含 steps / edges / topological_order）。
+
+    Returns:
+        {"nodes": [{"id", "label", "tasktype"}], "edges": [{"from", "to"}]}
+    """
+    steps = dag_info.get("steps", {}) or {}
+
+    nodes = []
+    for step_id, step_info in steps.items():
+        task_type = step_info.get("task_type", "")
+        algorithm = step_info.get("algorithm", "")
+
+        if task_type == "graph_algorithm":
+            tasktype_str = f"Graph Algorithm ({algorithm})" if algorithm else "Graph Algorithm"
+        elif task_type == "numeric_analysis":
+            tasktype_str = "Numeric Analysis"
+        else:
+            tasktype_str = "Unknown"
+
+        nodes.append({
+            "id": str(step_id),
+            "label": step_info.get("question", ""),
+            "tasktype": tasktype_str
+        })
+
+    edges = dag_info.get("edges", [])
+    if not edges:
+        topological_order = dag_info.get("topological_order", [])
+        edges = [
+            {"from": str(topological_order[i]), "to": str(topological_order[i + 1])}
+            for i in range(len(topological_order) - 1)
+        ]
+
+    return {
+        "nodes": nodes,
+        "edges": edges
+    }
+
+
+MAX_CHART_ITEMS = 10
+MAX_LIST_ITEMS = 10
+
+
+def _truncate_output_value(value: Any, fields: List[dict]) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        if isinstance(value, list):
+            return {"value": value[:MAX_LIST_ITEMS]}
+        if isinstance(value, (int, float, str, bool)) or value is None:
+            return {"value": value}
+        return {}
+
+    result: Dict[str, Any] = {}
+    for key, v in value.items():
+        meta = next((f for f in fields if f.get("key") == key), None)
+        if (
+            isinstance(v, dict)
+            and v
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v.values())
+            and any(isinstance(x, float) for x in v.values())
+        ):
+            ordered = sorted(v.items(), key=lambda kv: kv[1], reverse=True)
+            result[key] = dict(ordered[:MAX_CHART_ITEMS])
+            if len(ordered) > MAX_CHART_ITEMS and meta is not None:
+                meta["truncated"] = True
+                meta["total"] = len(ordered)
+        elif isinstance(v, list):
+            result[key] = v[:MAX_LIST_ITEMS]
+            if len(v) > MAX_LIST_ITEMS and meta is not None:
+                meta["truncated"] = True
+                meta["total"] = len(v)
+        elif isinstance(v, (int, float, str, bool)) or v is None:
+            result[key] = v
+    return result
+
+
+def workflow_step_to_frontend(step: WorkflowStep) -> Dict[str, Any]:
+    status = (
+        step.status
+        if step.status in ("running", "success", "failed")
+        else "running"
+    )
+    task_type = (
+        step.task_type.value
+        if hasattr(step.task_type, "value")
+        else (str(step.task_type) if step.task_type else None)
+    )
+
+    content: Dict[str, Any] = {
+        "step_id": step.step_id,
+        "status": status,
+        "question": step.question,
+        "task_type": task_type,
+        "algorithm": step.graph_algorithm,
+    }
+    if status == "failed" and step.error:
+        content["error"] = step.error
+
+    if status == "success" and step.result:
+        outputs = []
+        for item in step.result.values():
+            fields: List[dict] = []
+            if item.output_schema and item.output_schema.fields:
+                for key, field in item.output_schema.fields.items():
+                    fields.append({
+                        "key": key,
+                        "type": field.type or "",
+                        "desc": field.field_description or "",
+                    })
+            outputs.append({
+                "output_id": item.output_id,
+                "source": item.source,
+                "task_type": (
+                    item.task_type.value
+                    if hasattr(item.task_type, "value")
+                    else str(item.task_type)
+                ),
+                "description": (
+                    item.output_schema.description if item.output_schema else None
+                ),
+                "fields": fields or None,
+                "value": _truncate_output_value(item.value, fields),
+                "path": item.path,
+            })
+        content["outputs"] = outputs
+
+    return {
+        "type": "result",
+        "contentType": "node_status" if status == "running" else "node_result",
+        "content": content,
+    }

@@ -11,7 +11,8 @@ from typing import Any, Dict, Optional, Callable, List, Tuple, Union, Set
 
 from sympy import N
 from aag.config.engine_config import *
-from aag.models.graph_workflow_dag import GraphWorkflowDAG, WorkflowStep, OutputSchema, OutputField
+
+from aag.models.graph_workflow_dag import GraphWorkflowDAG, WorkflowStep, OutputSchema, OutputField, dag_info_to_frontend_format
 from aag.models.task_types import GraphAnalysisSubType, GraphAnalysisType
 from aag.reasoner.model_deployment import Reasoner
 from aag.engine.router import QueryRouter, QueryType
@@ -341,12 +342,20 @@ class Scheduler:
         if mode == "expert":
             return self._execute_graph_expert_mode(query)
 
-        self._build_dag_from_query(query, decompose)
-        self._find_algorithm()
+        self._build_dag_from_query(query, decompose, callback)
+        self._find_algorithm(callback=callback)
 
         print("✅ Initial DAG build and algorithm selection done")
         self.dag.print_dag_info()
-        
+
+        # 规划完成后立即下发 DAG（拆解/选算法过程已通过 callback 逐条流式下发），
+        if callback:
+            callback({
+                "type": "result",
+                "contentType": "dag",
+                "content": dag_info_to_frontend_format(self.dag.get_dag_info()),
+            })
+
         if mode == "interact":
             dag_info = self.dag.get_dag_info()
             return {
@@ -357,7 +366,11 @@ class Scheduler:
         self.dag.refresh_data_dependency(self.reasoner)
         self.dag.print_data_dependency()
         print("✅ DAG build and algorithm selection done; starting computation")
-        
+
+        # Route node execution events (on_step_start/on_step_end) through the
+        # streaming callback. None clears stale hooks from a previous request.
+        self.on_step_start = self.on_step_end = callback
+
         analysis_result = await self._run_algorithm_pipeline2()
         
         if callback and mode == "normal":
@@ -627,12 +640,18 @@ class Scheduler:
                 "input_hint": "Enter expert instructions in natural language; the system will generate subqueries."
             }
 
-    async def expert_modify_dag(self, modification_request: str) -> Dict[str, Any]:
+    async def expert_modify_dag(
+        self,
+        modification_request: str,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    ) -> Dict[str, Any]:
         """
         Interact mode: modify DAG per user request.
 
         Args:
             modification_request: User modification request (natural language).
+            callback: Optional callback for streaming events
+                (subproblems after revision / algorithm_selected per step).
 
         Returns:
             Dict with updated DAG info.
@@ -641,10 +660,19 @@ class Scheduler:
             return {
                 "error": "DAG not built yet; please enter a question to generate the DAG first."
             }
-        
+
         try:
             self.dag.modify_dag(self.reasoner, modification_request)
-            self._find_algorithm()
+            # 流式下发修改后的子问题列表
+            if callback:
+                subquery_plan = self.dag.get_subquery_plan()
+                if isinstance(subquery_plan, dict) and subquery_plan.get("subqueries"):
+                    callback({
+                        "type": "result",
+                        "contentType": "subproblems",
+                        "content": {"subqueries": subquery_plan.get("subqueries", [])},
+                    })
+            self._find_algorithm(callback=callback)
             dag_info = self.dag.get_dag_info()
             return {
                 "message": "DAG updated.",
@@ -896,13 +924,20 @@ class Scheduler:
             logger.warning(f"Failed to get graph schema summary: {e}")
             return None
 
-    def _build_dag_from_query(self, query: str, decompose: bool = True) -> GraphWorkflowDAG:
+    def _build_dag_from_query(
+        self,
+        query: str,
+        decompose: bool = True,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    ) -> GraphWorkflowDAG:
         """
         Convert user query to DAG, including query rewrite.
 
         Args:
             query: User query.
             decompose: Whether to decompose the query.
+            callback: Optional callback for streaming events
+                (thinking text after rewrite / subproblems after decomposition).
 
         Returns:
             Built DAG.
@@ -937,26 +972,58 @@ class Scheduler:
                 logger.info("🔗 Concept mappings:")
                 for mapping in mapped_concepts:
                     logger.info(f"  - {mapping.get('original_concept')} → {mapping.get('mapped_to')}")
-            
+
             # Use rewritten query for planning
             query_to_use = rewritten_query
-            
+
+            # 流式下发真实的"理解"文本（改写结果 + 推理依据 + 概念映射）
+            if callback:
+                parts = [f"已理解问题：{rewritten_query}"]
+                if reasoning:
+                    parts.append(reasoning)
+                if mapped_concepts:
+                    pairs = [
+                        f"{m.get('original_concept')} → {m.get('mapped_to')}"
+                        for m in mapped_concepts
+                        if m.get("original_concept")
+                    ]
+                    if pairs:
+                        parts.append("关键概念映射：" + "；".join(pairs))
+                callback({
+                    "type": "thinking",
+                    "contentType": "text",
+                    "content": "\n".join(parts) + "\n"
+                })
+
         except Exception as e:
             logger.warning(f"⚠️ Query rewriting failed: {e}, using original query")
             query_to_use = query
-        
+
         # Step 4: Continue with existing flow (plan subqueries)
         subquery_plan = self.reasoner.plan_subqueries(decompose, query_to_use)
+        if callback and isinstance(subquery_plan, dict) and subquery_plan.get("subqueries"):
+            callback({
+                "type": "result",
+                "contentType": "subproblems",
+                "content": {"subqueries": subquery_plan.get("subqueries", [])},
+            })
         return self.build_dag_from_subquery_plan(subquery_plan)
 
 
     def _find_algorithm(
         self,
         respect_preassigned: bool = False,
-        skip_step_ids: Optional[Set[int]] = None
+        skip_step_ids: Optional[Set[int]] = None,
+        callback: Optional[Callable[[Dict[str, Any]], None]] = None
     ):
         """
         Walk the DAG and assign a graph algorithm to each step from its question.
+
+        Args:
+            respect_preassigned: Keep expert-assigned algorithms instead of re-matching.
+            skip_step_ids: Step IDs to skip algorithm auto-match.
+            callback: Optional callback for streaming; each step emits an
+                "algorithm_selected" event once its algorithm/task type is resolved.
         """
         skip_step_ids = skip_step_ids or set()
         for step in self.dag.steps.values():
@@ -997,10 +1064,12 @@ class Scheduler:
                 step.task_type = GraphAnalysisType.GRAPH_QUERY
                 step.graph_algorithm = None
                 logger.info(f"✅ Classified as graph query | question: {step.question}, task_type: {step.task_type}, reason: {question_classification.get('reason', '')}")
+                self._emit_algorithm_selected(callback, step, "graph_query", None)
             elif question_type == "numeric_analysis":
                 step.task_type = GraphAnalysisType.NUMERIC_ANALYSIS
                 step.graph_algorithm = None
                 logger.info(f"✅ Classified as numeric analysis | question: {step.question}, task_type: {step.task_type}, reason: {question_classification.get('reason', '')}")
+                self._emit_algorithm_selected(callback, step, "numeric_analysis", None)
             else:
                 logger.info(f"📋 Task type selection | question: {step.question}")
                 task_type_list = self.expert_search_engine.retrieve_task_type(step.question)
@@ -1068,6 +1137,28 @@ class Scheduler:
                 step.task_type = GraphAnalysisType.GRAPH_ALGORITHM
                 step.graph_algorithm = selected_algorithm_id
                 logger.info(f"✅ Algorithm selected | question: {step.question}, task_type: {selected_task_type_id}, algorithm: {step.graph_algorithm}")
+                self._emit_algorithm_selected(callback, step, str(selected_task_type_id), selected_algorithm_id)
+
+    def _emit_algorithm_selected(
+        self,
+        callback: Optional[Callable[[Dict[str, Any]], None]],
+        step: WorkflowStep,
+        task_type: str,
+        algorithm: Optional[str],
+    ):
+        """流式下发单个 step 的算法选择结果（algorithm_selected 事件）。"""
+        if not callback:
+            return
+        callback({
+            "type": "result",
+            "contentType": "algorithm_selected",
+            "content": {
+                "step_id": int(step.step_id),
+                "question": step.question,
+                "task_type": task_type,
+                "algorithm": algorithm,
+            },
+        })
 
     async def _run_algorithm_pipeline(self):
         analysis_result = ""
@@ -1127,6 +1218,12 @@ class Scheduler:
         return analysis_result
     
 
+    def _fail_step(self, step_id: int, error_msg: str) -> None:
+        """Mark the step as failed and notify the on_step_end hook (if registered)."""
+        self.dag.set_failed(step_id, error_msg)
+        if self.on_step_end:
+            self.on_step_end(self.dag.steps[step_id])
+
     async def _run_algorithm_pipeline2(self, global_round: int = 0):
         max_global_rounds = 3
         analysis_blocks: Dict[str, Dict[str, Any]] = {}
@@ -1135,9 +1232,13 @@ class Scheduler:
 
         for step_id in self.dag.topological_order():
             step = self.dag.steps[step_id]
+            self.dag.set_running(step_id)
+            if self.on_step_start:
+                self.on_step_start(step)
+
             tool_description = None
             tool_metadata = None
-            tool_result = None 
+            tool_result = None
 
             data_dependency_parents = [self.dag.steps[pid] for pid in self.dag.parents_of(step_id)]
             data_dependency_context = {
@@ -1163,7 +1264,7 @@ class Scheduler:
 
             if step.task_type == GraphAnalysisType.GRAPH_ALGORITHM:
                 if not step.graph_algorithm:
-                    self.dag.set_failed(step_id, "No graph algorithm selected for this step")
+                    self._fail_step(step_id, "No graph algorithm selected for this step")
                     logger.error(f"❌ Step {step_id} missing graph_algorithm, skipping")
                     continue
 
@@ -1174,7 +1275,7 @@ class Scheduler:
                 if tool_metadata is None:
                     error_msg = f"Cannot get algorithm description for '{step.graph_algorithm}'"
                     logger.error(f"❌ {error_msg}")
-                    self.dag.set_failed(step_id, error_msg)
+                    self._fail_step(step_id, error_msg)
                     continue
                 
                 logger.info(f"tool_description:{tool_description}")
@@ -1185,7 +1286,7 @@ class Scheduler:
                         graph_adapter_result=data_dependency_context.get("graph_input_adapter_result"),
                     )
                 except Exception as graph_err:
-                    self.dag.set_failed(step_id, f"Failed to initialize working graph: {graph_err}")
+                    self._fail_step(step_id, f"Failed to initialize working graph: {graph_err}")
                     logger.error(f"❌ Step {step_id} graph init failed: {graph_err}, skipping")
                     continue
 
@@ -1295,7 +1396,7 @@ class Scheduler:
                         location=f"step_{step_id}"
                     )
                 except Exception as e:
-                    self.dag.set_failed(step_id, str(e))
+                    self._fail_step(step_id, str(e))
                     logger.error(f"❌ Step {step_id} algorithm execution failed: {e}, skipping")
                     continue
 
@@ -1308,6 +1409,8 @@ class Scheduler:
                 logger.info(f"✅ Tool execution: {tool_result.get('summary','done')}")
 
                 self.dag.set_success(step_id)
+                if self.on_step_end:
+                    self.on_step_end(step)
 
             elif step.task_type == GraphAnalysisType.NUMERIC_ANALYSIS:
                 logger.info("🧮 Task type: Numeric Analysis")
@@ -1317,7 +1420,7 @@ class Scheduler:
                 if data_dependency_parents and not graph_deps and not param_deps:
                     dep_empty_reason = "Dependency resolution returned empty graph/parameter dependencies"
                     logger.error(f"❌ Step {step_id} numeric analysis: {dep_empty_reason}")
-                    self.dag.set_failed(step_id, dep_empty_reason)
+                    self._fail_step(step_id, dep_empty_reason)
                     if self.error_recovery and global_round < max_global_rounds:
                         self.error_recovery.global_recover(
                             self.dag,
@@ -1396,7 +1499,7 @@ class Scheduler:
                         location=f"step_{step_id}"
                     )
                 except Exception as e:
-                    self.dag.set_failed(step_id, str(e))
+                    self._fail_step(step_id, str(e))
                     logger.error(f"❌ Step {step_id} numeric analysis failed: {e}, skipping")
                     if self.error_recovery and global_round < max_global_rounds:
                         self.error_recovery.global_recover(
@@ -1448,6 +1551,8 @@ class Scheduler:
                 
                 logger.info("✅ Numeric analysis completed")
                 self.dag.set_success(step_id)
+                if self.on_step_end:
+                    self.on_step_end(step)
 
             elif step.task_type == GraphAnalysisType.GRAPH_QUERY:
                 logger.info("🔍 Task type: Graph Query")
@@ -1486,6 +1591,8 @@ class Scheduler:
                         )
                         logger.info(f"✅ Graph query done; returned {query_result.get('count', 0)} results")
                         self.dag.set_success(step_id)
+                        if self.on_step_end:
+                            self.on_step_end(step)
                         
                         tool_result = {
                             "success": True,
@@ -1495,13 +1602,13 @@ class Scheduler:
                     else:
                         error_msg = query_result.get("error", "Graph query failed")
                         logger.error(f"❌ Step {step_id} graph query failed: {error_msg}, skipping")
-                        self.dag.set_failed(step_id, error_msg)
+                        self._fail_step(step_id, error_msg)
                         continue
                         
                 except Exception as query_err:
                     error_msg = f"Graph query execution failed: {query_err}"
                     logger.error(error_msg, exc_info=True)
-                    self.dag.set_failed(step_id, error_msg)
+                    self._fail_step(step_id, error_msg)
                     continue
 
             if tool_result is not None:

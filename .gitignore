@@ -146,4 +146,9 @@ docs/_build
 .vscode
 
 # database
-*.db 
+*.db
+
+# frontend
+web/frontend/models.json
+
+node_modules

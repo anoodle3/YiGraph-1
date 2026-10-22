@@ -35,16 +35,16 @@ Watch YiGraph turn raw data into a graph, analyze suspicious transactions, gener
 
 ### English · 3 min 57 sec
 
-[![Watch the English YiGraph demo](figure/demo/yigraph-demo-en.jpg)](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=en)
+https://github.com/user-attachments/assets/dcbbc3a0-1ab8-4997-9a00-9bea480bad5e
 
-[▶ Watch the English demo](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=en)
+[Open the standalone English player](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=en)
 
 <details>
 <summary>中文演示 · 3 分 34 秒</summary>
 
-[![观看易图中文演示](figure/demo/yigraph-demo-zh.jpg)](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=zh)
+https://github.com/user-attachments/assets/595de226-147f-40eb-aa3e-475a789fbc76
 
-[▶ 在线播放中文演示](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=zh) · [中文字幕](figure/demo/yigraph-demo-zh.srt)
+[打开独立中文播放器](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=zh) · [中文字幕](figure/demo/yigraph-demo-zh.srt)
 
 </details>
 

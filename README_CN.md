@@ -35,16 +35,16 @@
 
 ### 中文演示 · 3 分 34 秒
 
-[![观看易图中文演示](figure/demo/yigraph-demo-zh.jpg)](figure/demo/yigraph-demo-zh.mp4)
+[![观看易图中文演示](figure/demo/yigraph-demo-zh.jpg)](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=zh)
 
-[▶ 观看 / 下载中文演示](figure/demo/yigraph-demo-zh.mp4) · [中文字幕](figure/demo/yigraph-demo-zh.srt)
+[▶ 在线播放中文演示](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=zh) · [中文字幕](figure/demo/yigraph-demo-zh.srt)
 
 <details>
 <summary>English demo · 3 min 57 sec</summary>
 
-[![Watch the English YiGraph demo](figure/demo/yigraph-demo-en.jpg)](figure/demo/yigraph-demo-en.mp4)
+[![Watch the English YiGraph demo](figure/demo/yigraph-demo-en.jpg)](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=en)
 
-[▶ Watch / download the English demo](figure/demo/yigraph-demo-en.mp4)
+[▶ Watch the English demo](https://anoodle3.github.io/YiGraph-1/figure/demo/?lang=en)
 
 </details>
 

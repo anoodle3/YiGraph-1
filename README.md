@@ -29,6 +29,27 @@ English | [简体中文](README_CN.md)
 
 ---
 
+## 🎬 Demo
+
+Watch YiGraph turn raw data into a graph, analyze suspicious transactions, generate a traceable report, and refine a workflow in expert mode.
+
+### English · 3 min 57 sec
+
+[![Watch the English YiGraph demo](figure/demo/yigraph-demo-en.jpg)](figure/demo/yigraph-demo-en.mp4)
+
+[▶ Watch / download the English demo](figure/demo/yigraph-demo-en.mp4)
+
+<details>
+<summary>中文演示 · 3 分 34 秒</summary>
+
+[![观看易图中文演示](figure/demo/yigraph-demo-zh.jpg)](figure/demo/yigraph-demo-zh.mp4)
+
+[▶ 观看 / 下载中文演示](figure/demo/yigraph-demo-zh.mp4) · [中文字幕](figure/demo/yigraph-demo-zh.srt)
+
+</details>
+
+---
+
 ## 📖 Project Introduction
 
 **YiGraph is an end-to-end intelligent graph data analysis agent system** designed to help users quickly gain insights into key relationships from complex data.

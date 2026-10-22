@@ -29,6 +29,27 @@
 
 ---
 
+## 🎬 演示视频
+
+从原始数据导入与自动构图，到可疑交易分析、可追溯报告生成和专家模式下的工作流调整，查看易图的完整操作过程。
+
+### 中文演示 · 3 分 34 秒
+
+[![观看易图中文演示](figure/demo/yigraph-demo-zh.jpg)](figure/demo/yigraph-demo-zh.mp4)
+
+[▶ 观看 / 下载中文演示](figure/demo/yigraph-demo-zh.mp4) · [中文字幕](figure/demo/yigraph-demo-zh.srt)
+
+<details>
+<summary>English demo · 3 min 57 sec</summary>
+
+[![Watch the English YiGraph demo](figure/demo/yigraph-demo-en.jpg)](figure/demo/yigraph-demo-en.mp4)
+
+[▶ Watch / download the English demo](figure/demo/yigraph-demo-en.mp4)
+
+</details>
+
+---
+
 ## 📖 项目介绍
 
 **易图（YiGraph）是一套端到端的图数据分析智能体系统**，用于帮助用户从复杂数据中快速洞察关键关联关系。
